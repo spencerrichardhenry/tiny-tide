@@ -1,0 +1,7 @@
+{
+  "appId": "com.spencerhenry.tinytide",
+  "appName": "Tiny Tide",
+  "webDir": "dist-android",
+  "backgroundColor": "#123f49",
+  "zoomEnabled": false
+}

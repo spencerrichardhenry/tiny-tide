@@ -7,3 +7,9 @@ dist/
 .DS_Store
 __pycache__/
 *.pyc
+dist-android/
+android/app/build/
+android/build/
+android/.gradle/
+android/app/src/main/assets/public/
+android/capacitor-cordova-android-plugins/build/

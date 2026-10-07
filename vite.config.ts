@@ -1,32 +1,20 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
-import { existsSync } from 'node:fs';
 
-// GitHub Pages serves the site at https://<user>.github.io/wildtag/, so
-// production builds and their local preview need the repo-name base path.
-// Dev and tests stay at '/'.
+// GitHub Pages serves the game at https://<user>.github.io/tiny-tide/, so production builds and their local preview need the
+// repo-name base path. `npm run android:build` builds with a relative base for the phone app. Dev and tests stay at '/'.
 export default defineConfig(({ command, isPreview, mode }) => ({
-  base: command === 'build' || isPreview ? '/wildtag/' : '/',
+  base: command === 'build' || isPreview ? '/tiny-tide/' : '/',
   build: {
     rollupOptions: {
       input: {
-        wildtag: 'index.html', tide: 'tiny-tide.html', siege: 'royal-yeet.html', wildtagAlias: 'wildtag.html', grandpa: 'grandpa.html',
-        ...(existsSync('mineral-wage.html') ? { miner: 'mineral-wage.html' } : {}),
-        // The Tiny Tide browser-test fixture page exists only in development builds (the dev server serves it as well).
+        tide: 'index.html',
+        // The browser-test fixture page exists only in development builds (the dev server serves it as well).
         ...(mode === 'development' ? { tideFixtures: 'tests-browser/fixtures.html' } : {}),
       },
     },
   },
-  server: {
-    port: 5199,
-  },
-  preview: {
-    port: 5199,
-  },
-  test: {
-    // Agent worktrees live under .claude/worktrees and contain full copies of
-    // the suite, and .codex-drafts holds stale draft copies — exclude them so
-    // `npm test` runs each test exactly once.
-    exclude: ['**/node_modules/**', '.claude/**', '.codex-drafts/**'],
-  },
+  server: { port: 5199 },
+  preview: { port: 5199 },
+  test: { exclude: ['**/node_modules/**', '.claude/**', 'android/**'] },
 }));

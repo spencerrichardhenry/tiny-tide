@@ -8,7 +8,7 @@ The design of this update is in [TINY-TIDE-EVOLUTION.md](TINY-TIDE-EVOLUTION.md)
 
 ## Play
 
-Run `npm run dev` and open `http://localhost:5199/tiny-tide.html`.
+Run `npm run dev` and open `http://localhost:5199/`.
 
 - **Move:** drag the left joystick, or use WASD / arrow keys.
 - **Look:** swipe the world on a phone. On a desktop, use a middle drag or Alt + left drag. Swimming/flying forward follows the camera,

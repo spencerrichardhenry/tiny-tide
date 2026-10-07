@@ -3,7 +3,7 @@
 import { chromium } from 'playwright';
 
 export const BASE = process.env.TIDE_BASE || 'http://127.0.0.1:5199';
-export const GAME = `${BASE}/tiny-tide.html?qa`;
+export const GAME = `${BASE}/?qa`;
 export const FIXTURES = `${BASE}/tests-browser/fixtures.html`;
 export const KEYS = { v4: 'tiny-tide-adventure-v4', fresh: 'tiny-tide-adventure-v4-fresh', v2: 'tiny-tide-adventure-v2', v1: 'tiny-tide-adventure-v1' };
 
