@@ -10,7 +10,7 @@ import { STAGES } from '../../src/tiny-tide/state';
 import { PLAYER_HALF, populate, SIZES, WATER_LEVEL } from '../../src/tiny-tide/biomes';
 import type { Actor, Terrain } from '../../src/tiny-tide/combat-types';
 
-const visible = () => { const out: string[] = []; const walk = (path: string[]) => { out.push(path.at(-1)!); for (const c of eligibleChildren(path, { coast: false })) walk([...path, c.id]); }; walk([ROOT_PLAN]); return [...new Set(out)]; };
+const visible = () => { const out: string[] = []; const walk = (path: string[]) => { out.push(path.at(-1)!); for (const c of eligibleChildren(path, { coast: true })) walk([...path, c.id]); }; walk([ROOT_PLAN]); return [...new Set(out)]; };
 const dietsOf = (size: number) => size >= 3 ? (['herbivore'] as const) : (['herbivore', 'carnivore', 'omnivore'] as const);
 const sea = (stage: number) => ({ queries: makeWorldQueries(makeTerrain(stage)) });
 
@@ -51,5 +51,5 @@ describe('food approach', () => {
     for (const id of visible()) { const p = plan(id)!; if (p.size === 4) continue;
       for (const diet of dietsOf(p.size)) for (const seed of [1, 2, 3]) expect(reachableFoodDna(p, diet, seed, { peacefulOnly: true }), `${id} ${diet} ${seed}`).toBeGreaterThan(STAGES[p.size]!.goal);
     }
-  });
+  }, 120_000);   // with the coast plans (shore and land lines) about 25 s alone
 });

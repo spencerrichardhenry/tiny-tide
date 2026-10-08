@@ -21,7 +21,12 @@ export const STAGES: readonly Stage[] = [
   { title: 'Cosmic', biome: 'THE FINAL FRONTIER', size: '∞', description: 'Float through the stars and eat all 12 planets.', goal: PLANET_COUNT, speed: 8, radius: 3, color: '#bfc0ff', action: 'Rise' },
 ];
 /** The stage toast for what the creature can do (final review M6: "Hold Rise to swim up" showed to a crawler; Breach only with Breach). */
-export function stageDescription(stage: number, caps: { ground: boolean; rise: boolean; breach: boolean }): string {
+export function stageDescription(stage: number, caps: { ground: boolean; rise: boolean; breach: boolean }, land: 'shore' | 'land' | null = null): string {
+  // The coast plans (coast.ts): the island at size 1, the continent from size 2.
+  if (land && stage === 1) return 'Walk the island beach and its shallows. Eat beach berries and clams.';
+  if (land === 'land' && stage === 2) return 'Roam the continent. Eat dune melons and coconut crabs.';
+  if (land === 'shore' && stage === 2) return 'Roam the shallows and the continent shore.';
+  if (land && stage === 3) return 'Stride across the continent. Eat the pine groves.';
   if (stage === 1 && !caps.rise) return 'Walk the reef floor. Crabs are snacks now, but they pinch back. Squid hunt the middle water.';
   if (stage === 2 && !caps.breach) return 'Squid fight back. Rays sting.';
   return STAGES[stage]!.description;
@@ -375,3 +380,5 @@ export function parseSaveWithNotes(raw: string | null, build: Build, catalog: re
 export function parseSave(raw: string | null, build: Build = { coast: false }): Run | null {
   const loaded = parseSaveWithNotes(raw, build); return loaded?.status === 'ok' ? loaded.run : null;
 }
+/** Which coast plan a run's current plan is: 'land' (land only), 'shore' (land and shallow water), else null (stageDescription). */
+export function landOf(p: BodyPlan): 'shore' | 'land' | null { return p.needs !== 'coast' ? null : p.habitat === 'land' ? 'land' : 'shore'; }

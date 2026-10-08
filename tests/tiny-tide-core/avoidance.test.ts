@@ -26,7 +26,7 @@ describe('avoidance', () => {
     }
     console.log(report.join('\n'));
   }, 300_000);   // about 10 s alone: the crawler search recovers many mid-water candidates (fix round 3: headroom beside two browser checks)
-  it('a player that flees outward from x = 38 into the edge current escapes: the hunter gives up at the push zone (owner ruling M11)', () => {
+  it('a player that flees outward from x = −38 into the edge current escapes: the hunter gives up at the push zone (owner ruling M11)', () => {
     const report: string[] = [];
     for (const [planId, hunterKey] of [['speck', '1:crab'], ['swimmer', '2:squid'], ['crawler', '2:squid'], ['darter', '2:squid']] as const) {
       let tried = 0;
@@ -35,7 +35,7 @@ describe('avoidance', () => {
         tried++;
         const r = simulateEscape(e), size = SIZES[plan(planId)!.size]!;
         report.push(`${planId} vs ${hunterKey} seed ${seed}: start x ${(e.start.x / size).toFixed(1)}, hunter x ${(e.hunterStart.x / size).toFixed(1)}: ${r.reason} at ${r.seconds.toFixed(1)}s`);
-        expect(e.start.x / size).toBeLessThan(EDGE_SOFT_START * PLAYER_HALF);
+        expect(Math.abs(e.start.x) / size).toBeLessThan(EDGE_SOFT_START * PLAYER_HALF);
         expect(r.ok, report.at(-1)).toBe(true);
       }
       expect(tried, `${planId} vs ${hunterKey}: no edge encounter`).toBeGreaterThan(0);

@@ -24,7 +24,7 @@ type Mode = 'ground' | 'swim' | 'surface' | 'glide' | 'fly' | 'burrow' | 'space'
 /** speed = multiplier; acceleration/braking in stage-local units/s²; yaw/pitch in rad/s. A derived view of the profiles in profiles.ts. */
 export const MOVEMENT_FACTS: Record<string, { mode: Mode; speed: number; acceleration: number; braking: number; yaw: number; pitch: number }> = Object.fromEntries(
   PLAN_MOVEMENT_IDS.map(id => { const m = MOVEMENTS[id]!; return [id, { mode: m.mode, speed: m.speedMultiplier, acceleration: m.acceleration, braking: m.braking, yaw: m.maxYawRate, pitch: m.maxPitchRate }]; }));
-export const COAST_READY = false;
+export const COAST_READY = true;
 export const ROOT_PLAN = 'speck';
 const ANY: SegmentRule = { radius: [.25, 1.2], height: [.25, 1.2] };
 const HEAD: readonly PartKind[] = ['mouth', 'eye', 'sense', 'arm', 'armor'];
@@ -71,10 +71,10 @@ export const PLANS: readonly BodyPlan[] = [
     regions: R(BIG_HEAD, 6, not(ALL, ['mouth', 'wing', 'jet']), 10, ['tail', 'armor', 'sense', 'arm'], 4), requiresKinds: ['leg'], bans: ['wing', 'jet'], bonuses: { stealth: 1 } }),
   P({ id: 'star_swimmer', name: 'Star swimmer', blurb: 'Swim between the planets.', size: 4, parents: ['sky_drifter'], line: 'swimmer', habitat: 'space', movement: 'space', spine: spine(3, 8),
     regions: R(BIG_HEAD, 7, not(ALL, ['mouth', 'leg']), 12, ['tail', 'fin', 'armor', 'jet', 'sense', 'cosmic'], 5), bans: ['leg'] }),
-  P({ id: 'star_crawler', name: 'Star crawler', blurb: 'Haul yourself through the void. Slow, but hard to stop.', size: 4, parents: ['colossus'], line: 'crawler', habitat: 'space', movement: 'space-slow', spine: spine(3, 8),
-    regions: R(BIG_HEAD, 7, not(ALL, ['mouth', 'wing']), 12, ['tail', 'armor', 'sense', 'cosmic', 'arm'], 5), bans: ['wing'], bonuses: { armor: 1, health: 1 }, physics: { massPerBodyLength: 1.6, knockbackResistance: .5 } }),
+  P({ id: 'star_crawler', name: 'Star crawler', blurb: 'Haul yourself through the void on arms, not legs. Slow, but hard to stop.', size: 4, parents: ['colossus'], line: 'crawler', habitat: 'space', movement: 'space-slow', spine: spine(3, 8),
+    regions: R(BIG_HEAD, 7, not(ALL, ['mouth', 'wing', 'leg']), 12, ['tail', 'armor', 'sense', 'cosmic', 'arm'], 5), bans: ['wing', 'leg'], bonuses: { armor: 1, health: 1 }, physics: { massPerBodyLength: 1.6, knockbackResistance: .5 } }),
   P({ id: 'star_walker', name: 'Star walker', blurb: 'Step from world to world.', size: 4, parents: ['dune_giant', 'shore_giant'], line: 'shore', habitat: 'space', movement: 'space-slow', spine: spine(3, 8), needs: 'coast',
-    regions: R(BIG_HEAD, 7, not(ALL, ['mouth', 'wing', 'fin']), 12, ['tail', 'armor', 'sense', 'cosmic', 'arm'], 5), bans: ['wing', 'fin'], bonuses: { stealth: 1 } }),
+    regions: R(BIG_HEAD, 7, not(ALL, ['mouth', 'wing', 'fin', 'leg']), 12, ['tail', 'armor', 'sense', 'cosmic', 'arm'], 5), bans: ['wing', 'fin', 'leg'], bonuses: { stealth: 1 } }),
 ];
 const byId = new Map(PLANS.map(p => [p.id, p]));
 export const plan = (id: string) => byId.get(id);

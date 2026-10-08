@@ -96,8 +96,8 @@ check('1', 'Path screen', async () => {
   await play(page, { ready: true });
   await openPaths(page);
   const plans = await page.locator('#path-screen .path-card').evaluateAll(cards => cards.map(c => c.dataset.plan));
-  assert.deepEqual([...plans].sort(), ['crawler', 'swimmer'], 'a ready Speck sees exactly the swimmer and crawler cards');
-  const sacrifice = { swimmer: 'Can never grow legs again', crawler: 'Never swims freely or flies' };
+  assert.deepEqual([...plans].sort(), ['crawler', 'shore_walker', 'swimmer'], 'a ready Speck sees exactly the swimmer, crawler and shore-walker cards');
+  const sacrifice = { swimmer: 'Can never grow legs again', crawler: 'Never swims freely or flies', shore_walker: 'Can never fly' };
   for (const id of plans) {
     const card = page.locator(`#path-screen [data-plan=${id}]`);
     assert.match(await card.locator('.path-silhouette').getAttribute('src'), /^data:image\//, `${id}: silhouette`);
@@ -119,27 +119,31 @@ check('1', 'Path screen', async () => {
 
 /** A ready Crawler with zero DNA and an extra Little-leg pair (p5). */
 const SHORT_CRAWLER = { path: ['crawler'], ready: true, dna: 0, add: { 1: [{ id: 'leg_little', t: .6, scale: .7 }] } };
-check('2', 'Customize fallback', async () => {
+check('2', 'Base body fallback', async () => {
+  // Every evolution starts from the plan's base body (bases.ts). With no DNA the Crawler base leaves out its starter eyes (the minimal
+  // base: the mouth and the required legs), so the proposal stays affordable; with DNA it keeps them.
   const { page, errors } = await newPage();
-  const fx = await play(page, SHORT_CRAWLER);
-  const shell = fx.info.children.find(c => c.id === 'shellback'); assert.ok(shell.quote && !shell.quote.affordable, 'fixture: the Shellback proposal is unaffordable');
-  const extra = fx.info.parts.at(-1).uid;
+  const rich = await makeFixture(page, { ready: true }), fx = await play(page, { ready: true, dna: 0 });   // makeFixture leaves the game page
+  const poor = fx.info.children.find(c => c.id === 'crawler'), full = rich.info.children.find(c => c.id === 'crawler');
+  assert.ok(poor.quote.affordable, 'the minimal Crawler base is affordable with no DNA');
+  assert.ok(!poor.changes.some(c => c.includes('stalk eye')) && full.changes.some(c => c.includes('stalk eye')), `starter eyes only with DNA (${poor.changes} | ${full.changes})`);
   await openPaths(page);
-  assert.equal(await page.locator('#path-screen [data-plan=shellback] .path-banner').textContent(), `Needs changes you choose: short by ${shell.quote.shortfall} DNA`);
-  await choosePath(page, 'shellback');
-  assert.equal(await page.locator('#editor .ed-done').isDisabled(), true, 'Done is disabled while short of DNA');
-  await selectPart(page, extra);
-  await page.locator('#editor .ed-delete').click(); await frames(page, 2);
-  assert.equal(await page.locator('#editor .ed-done').isDisabled(), false, 'removing the extra pair enables Done');
+  assert.equal(await page.locator('#path-screen [data-plan=crawler] .path-banner').count(), 0, 'no shortfall banner');
+  await choosePath(page, 'crawler');
+  const changes = await page.locator('#editor .ed-changes li').allTextContents();
+  assert.ok(changes.some(c => c.includes('A fresh Crawler body: 3 parts came off')), `.ed-changes: ${changes}`);
+  assert.equal(await page.locator('#editor .ed-done').isDisabled(), false, 'Done is enabled');
   await page.locator('#editor .ed-done').click(); await page.locator('#editor').waitFor({ state: 'detached' });
   await page.waitForFunction(() => window.__tinyTide.mode === 'playing', {}, { timeout: 15000 });
-  assert.deepEqual((await state(page)).plans, ['speck', 'crawler', 'shellback']);
+  const after = await state(page);
+  assert.deepEqual(after.plans, ['speck', 'crawler']);
+  assert.ok(!after.genome.parts.some(x => fx.info.uids.includes(x.uid) && !x.id.startsWith('mouth')), 'no old part but the mouth survives the evolution');
   assert.deepEqual(errors, []);
 });
 
 check('3', 'Submit failure keeps the editor', async () => {
   const { page, errors } = await newPage();
-  await play(page, { ready: true }, 'qaRejectSubmit=1');
+  await play(page, { ready: true, dna: 100 }, 'qaRejectSubmit=1');   // DNA for an Antenna pair on top of the Crawler base
   await openPaths(page); await choosePath(page, 'crawler');
   const count0 = await complexity(page);
   await arm(page, 'sense', 'antenna');
@@ -158,21 +162,28 @@ check('3', 'Submit failure keeps the editor', async () => {
   await page.waitForFunction(() => window.__tinyTide.mode === 'playing', {}, { timeout: 15000 });
   assert.deepEqual((await state(page)).plans, ['speck', 'crawler'], 'Done again succeeds');
 
-  // An unaffordable proposal; a size the DNA cannot pay for is refused.
+  // A size the DNA cannot pay for is refused. The Shellback base spends most of the refunds; each starter part in turn grows to the
+  // largest size until one growth costs more than the DNA left.
   const second = await newPage();
-  await play(second.page, SHORT_CRAWLER); await openPaths(second.page); await choosePath(second.page, 'shellback');
-  const p = second.page, dna = await dnaLeft(p);
-  assert.ok(dna < 0, `.ed-dna-value is negative (${dna})`);
-  assert.equal(await p.locator('#editor .ed-done').isDisabled(), true, 'Done is disabled');
-  await selectPart(p, 'p3');
-  const before = { value: await p.locator('#editor .ed-scale').inputValue(), cost: await p.locator('#editor .ed-size-cost').textContent(), selected: await data(p, 'selected'), count: await complexity(p) };
-  await dragSliderToMax(p, '#editor .ed-scale'); await frames(p, 2);
-  assert.equal(await p.locator('#editor .ed-scale').inputValue(), before.value, 'the slider keeps its value');
-  assert.equal(await p.locator('#editor .ed-size-cost').textContent(), before.cost, 'the size cost is unchanged');
-  assert.equal(await data(p, 'selected'), before.selected, 'the part is unchanged');
-  assert.equal(await complexity(p), before.count, 'the slots are unchanged');
-  assert.equal(await dnaLeft(p), dna, '.ed-dna-value is unchanged');
-  assert.match(await p.locator('#editor .ed-hint').textContent(), /Not enough DNA/, 'the hint shows');
+  const short = await play(second.page, SHORT_CRAWLER); await openPaths(second.page); await choosePath(second.page, 'shellback');
+  const p = second.page, uids = short.info.children.find(c => c.id === 'shellback').uids.slice(1);   // not the mouth
+  assert.ok(await dnaLeft(p) >= 0, 'the proposal is affordable');
+  let refused = false;
+  for (const uid of uids) {
+    await selectPart(p, uid);
+    const dna = await dnaLeft(p), before = { value: await p.locator('#editor .ed-scale').inputValue(), cost: await p.locator('#editor .ed-size-cost').textContent(), selected: await data(p, 'selected'), count: await complexity(p) };
+    await dragSliderToMax(p, '#editor .ed-scale'); await frames(p, 2);
+    if (await p.locator('#editor .ed-scale').inputValue() !== before.value) continue;   // affordable: it grew
+    if (before.value === await p.locator('#editor .ed-scale').getAttribute('max')) continue;
+    refused = true;
+    assert.equal(await p.locator('#editor .ed-size-cost').textContent(), before.cost, 'the size cost is unchanged');
+    assert.equal(await data(p, 'selected'), before.selected, 'the part is unchanged');
+    assert.equal(await complexity(p), before.count, 'the slots are unchanged');
+    assert.equal(await dnaLeft(p), dna, '.ed-dna-value is unchanged');
+    assert.match(await p.locator('#editor .ed-hint').textContent(), /Not enough DNA/, 'the hint shows');
+    break;
+  }
+  assert.ok(refused, 'a growth the DNA cannot pay for was refused');
   assert.deepEqual([...errors, ...second.errors], []);
 });
 
@@ -181,7 +192,7 @@ check('4', 'Evolve editor', async () => {
   const fx = await play(page, { ready: true });
   await openPaths(page); await choosePath(page, 'swimmer');
   const changes = await page.locator('#editor .ed-changes li').allTextContents();
-  assert.ok(changes.some(c => c.includes("Little leg removed: Swimmers can't use it.")), '.ed-changes lists the removed leg');
+  assert.ok(changes.some(c => c.includes('A fresh Swimmer body: 3 parts came off')), `.ed-changes lists the fresh body (${changes})`);
   await page.locator('#editor .ed-undo-all').click(); await frames(page, 2);
   assert.equal(await page.locator('#editor .ed-done').isDisabled(), true, 'Undo all disables Done');
   await page.locator('#editor .ed-fix').click(); await frames(page, 2);
@@ -690,14 +701,13 @@ check('12d', 'Undo all restores the committed pins (evolve editor)', async () =>
   await play(page, { ready: true, add: { 0: [{ id: 'claw_pincer', t: .5 }] }, pins: [null, 'grab', null, null] });
   await openPaths(page); await choosePath(page, 'crawler');
   const chips = () => page.locator('#editor .ed-slot-bar .ed-slot').evaluateAll(els => els.map(e => e.querySelector('.ed-move-chip')?.dataset.kind ?? null));
-  const start = await chips(); assert.equal(start[1], 'grab', 'the committed Grab pin shows in slot 2');
-  await page.locator('#editor .ed-move-chip[data-kind="grab"]').click(); await page.keyboard.press('4');
-  assert.equal((await chips())[3], 'grab', 'key 4 moves Grab');
-  assert.equal(await page.locator('#editor .ed-undo-all').isDisabled(), false, 'a pin change enables Undo all');
+  // The base body (bases.ts) takes the Pincer off, so its Grab pin is gone from the proposal; Undo all brings back the committed design
+  // and its pins, and Undo returns to the proposal.
+  const start = await chips(); assert.equal(start.includes('grab'), false, `the base body has no Grab (${start})`);
   await page.locator('#editor .ed-undo-all').click(); await frames(page, 2);
-  assert.deepEqual(await chips(), start, 'Undo all restores the committed pins');
+  assert.equal((await chips())[1], 'grab', 'Undo all restores the committed Grab pin in slot 2');
   await page.locator('#editor .ed-undo').click(); await frames(page, 2);
-  assert.equal((await chips())[3], 'grab', 'Undo after Undo all brings the pin change back');
+  assert.deepEqual(await chips(), start, 'Undo after Undo all brings the proposal back');
   assert.deepEqual(errors, []);
 });
 
@@ -843,18 +853,18 @@ check('16', 'Pause keeps the runtime', async () => {
   assert.deepEqual(errors, []);
 });
 
-check('17', 'Kept coast save', async () => {
+check('17', 'Coast save', async () => {
+  // The coast is in (coast.ts): a Shore-walker save loads, starts on the island and eats its beach food.
   const { page, errors } = await newPage();
   const coast = await makeFixture(page, { path: ['shore_walker'], coast: true });
   await openGame(page, { storage: { [KEYS.v4]: coast.json } });
-  await page.locator('#home-notes .home-note.kept').waitFor();
-  assert.match(await page.locator('#home-notes .home-note.kept').textContent(), /lives on the coast/);
+  assert.equal(await page.locator('#home-notes .home-note.kept').count(), 0, 'no kept note');
   await start(page);
+  const s = await state(page);
+  assert.deepEqual(s.plans, ['speck', 'shore_walker']);
+  assert.ok(s.player.x < 0 && s.player.z < 0, `the Shore-walker starts on the island (${JSON.stringify(s.player)})`);
   await eatOnce(page, 'eat once');
-  await page.reload(); await page.waitForFunction(() => window.__tinyTide?.time > .3);
-  assert.equal((await state(page)).loadedKey, KEYS.fresh, 'the fresh run resumes from -v4-fresh');
-  await start(page); assert.ok((await state(page)).bites >= 1, 'the meal was kept');
-  assert.equal(await storageOf(page, KEYS.v4), coast.json, '-v4 still holds the coast fixture');
+  assert.ok((await state(page)).bites >= 1, 'a meal on the island');
   assert.deepEqual(errors, []);
 });
 
@@ -884,4 +894,4 @@ try {
   }
 } finally { await browser.close(); }
 if (failures.length) { console.log(`FAILED: ${failures.join(', ')}`); process.exit(1); }
-console.log(`PASSED: ${only.length ? `checks ${only.join(', ')}` : 'all 18 checks (with 5b, 5c, 5d, 7b, 7c, 10b, 12b, 12c, 12d and 13b)'}: path screen, customize fallback, submit failure, evolve editor, swimmer and crawler limits, soft world edge, solid reef rocks, block hints, high spawn recovery, bite at the floor, transformation path, diet lock, size pricing, desktop and touch gestures, chorded mouse buttons, allocation, lost moves, the moves panel and swap, hazards and invulnerability, pose agreement, faint during a Breach, pause, kept coast save, legacy keys.`);
+console.log(`PASSED: ${only.length ? `checks ${only.join(', ')}` : 'all 18 checks (with 5b, 5c, 5d, 7b, 7c, 10b, 12b, 12c, 12d and 13b)'}: path screen, base body fallback, submit failure, evolve editor, swimmer and crawler limits, soft world edge, solid reef rocks, block hints, high spawn recovery, bite at the floor, transformation path, diet lock, size pricing, desktop and touch gestures, chorded mouse buttons, allocation, lost moves, the moves panel and swap, hazards and invulnerability, pose agreement, faint during a Breach, pause, coast save, legacy keys.`);

@@ -97,11 +97,62 @@ edge fade). At the Big size (scale above 32) the two fine rings would be
 under 1/4 local unit per quad, so they are hidden and one coarse ring
 (spacing 24) covers the same area, joined to the reef and to the 24 ring with
 the same vertices. Stage 3 draws 178 052 seabed triangles (291 580 before);
-the phone check measures .86M, 1.26M, 1.51M and 1.24M triangles per frame at
-stages 0 to 3 (stage 3 was 1.35M) and asserts a budget of 1.6M. Measured maximum error: stage 1, .010 L; stage 2, .009 L; stage 3,
+the phone check measured .86M, 1.26M, 1.51M and 1.24M triangles per frame at
+stages 0 to 3 (stage 3 was 1.35M) and asserts a budget of 1.6M. With the coast
+and the phone quality (see "Phone quality" under Verification) it measures .65M,
+.93M, 1.08M and .92M. Measured maximum error: stage 1, .010 L; stage 2, .009 L; stage 3,
 .016 L. The old Blender rings (`seabed_1`, `seabed_2`) were off by up to .09 L
 at stage 1 and .21 L at stage 2, and did not reach the stage-3 bound. They are
 still in the asset library, but the game no longer loads them.
+
+### The coast
+
+Sub-project 2 of the evolution core (owner, 2026-10-07): one island for the
+amphibians and one continent for the land walkers. Both are smooth lifts added
+to the open-sea seabed (`coast.ts`; `seabedHeight` = `baseSeabedHeight` +
+`coastLift`), so the collision ground, the drawn seabed and every spawn agree.
+Each lift is zero outside its own area.
+
+| Landmass | Where (physical units) | Shape | Who uses it |
+| --- | --- | --- | --- |
+| Island | Centre (−130, −130), radius 77; dry to about r 15–30 (the base seabed tilts it) | Dome 6 over the water, sand beach, shallow shelf, then an underwater cliff (slope up to 2.5) | Shore-walker (size 1); Mudskipper and Shore giant can wade there |
+| Continent | Toward +x; foot at x = 300 + 45 sin(z / 280 + 1), waterline near x 500 | Ramp at slope .6 to a coast plateau about 110 high, then a gentle rise (slope .1) to about 160 inland | Strider (size 2), Dune giant, Colossus and Shore giant (size 3) |
+
+The island sits in the (−x, −z) corner of the size-1 square, outside the reef
+mesh (±65) and the size-0 view. The continent's waterline is inside the size-2
+reach (a land strip of about 6 body lengths), and at size 3 it is about 43 % of
+the square.
+
+**Land food.** Five land species spawn only on the dry land of their landmass
+(`Species.zone`), after every other spawn and with their own random streams, so
+no older spawn moved: Beach berries (plant, 14) and Beach clams (meat, 14) on the
+island; Dune melons (plant, 18) and Coconut crabs (meat, 12) on the continent at
+size 2; Pine groves (any, 12) on the continent at size 3. Palm trees and
+lighthouses that land on the continent stand on the ground and draw no little
+island of their own.
+
+**Sea life and the coast.** A sea spawn that the coast does not fit
+(`coastFits`) is placed again with its own random stream: water life needs water
+deeper than min(1.5 × size, 10) and keeps off the island's steep flanks (slope
+under .9); flyers stay 4 × size over the land; boats need water at least 10 deep.
+An alpha lair that would land on the coast turns to the next diagonal. The reef
+places no plant, rock or arch where the coast lifts the ground.
+
+**Collision bounds.** The coast is much steeper than the open seabed (the
+island's cliff has slope 2.5). Admission takes its slope and curvature bounds
+locally (`Terrain.boundsAt`): near a landmass it adds the bounds of the part of
+the profile under the scan; elsewhere the open-sea bounds (.63, .026) and the
+tight scan are unchanged.
+
+**The land band.** Air over dry ground within .6 L of it needs `land` (or
+`air`). The test uses the body's lowest point (spec §3), so a tall walker's back
+is not "air". Before the coast no plan stood on dry land, so this did not show.
+
+**Drawing.** The rings draw the ground without the island (`ringHeight`); the
+island has its own polar mesh (192 spokes, radial step 1.25, about 24 000
+triangles) drawn over them with a polygon offset. It agrees with the collision
+ground within .02 L at every size. Land is sand from 8 units under the
+waterline and turns to grass from 3 to 12 units above it.
 
 **Reef decoration (owner playtest P4).** `reef.ts` places the reef: a pure,
 seeded function `placeReef(layer, seed)` for each of three layers (physical
@@ -282,8 +333,10 @@ movement profiles). The full design is in
 | 4 | Star crawler | crawler | Space, slow (×.85). Armor +1, hearts +1. No wings. |
 
 The Shore-walker line (Shore-walker, Strider, Mudskipper, Dune giant, Shore
-giant, Star walker) needs the coast. This build has no coast
-(`COAST_READY = false`), so the path screen does not show it.
+giant, Star walker) needs the coast (see [The coast](#the-coast)). The coast is
+in this build (`COAST_READY = true`), so a ready Speck sees three cards:
+Swimmer, Crawler and Shore-walker. Star crawler and Star walker ban legs (owner,
+2026-10-07: legs in space looked wrong); they move on arms.
 
 A run keeps every commitment on its path. A plan that breaks a commitment is
 not eligible. Effective stats are the part stats plus the plan bonuses. Maximum
@@ -295,6 +348,18 @@ screen. Each eligible plan has a card with "Playstyle" (up to three gains),
 or "None new" with the inherited ones) and "Leads to". "Details" shows all
 changes, a preview and the DNA result. "Choose your diet now": the evolve
 editor accepts any unlocked mouth. "Not yet" goes back to play.
+
+**Base bodies (owner, 2026-10-07).** Every evolution starts again from the new
+plan's base body (`bases.ts`). All parts come off and the ledger returns the
+credit they hold. The mouth stays (moved to the front). The body takes the
+plan's own spine shape and a few starter parts, so each plan is a different
+animal: for example a torpedo Swimmer, a flat wide Crawler with two leg pairs,
+an upright Shore-walker, a long thin Burrower, a flat Sky drifter manta and a
+long Star swimmer serpent. Each plan of a size has a different spine. When the
+starter parts cost more DNA than the creature has, the proposal is the minimal
+base: the mouth and the parts the plan requires (`evolutionProposal`). The
+player then builds on the base in the evolve editor. The path screen previews
+each base body.
 
 ## Habitats and movement
 
@@ -378,10 +443,16 @@ the creature enters the edge's push zone, with the same rule:
 | Floor gap | "<Plan>s stay on the seabed." |
 | Depth | "<Plan>s stay in shallow water." |
 
-**Movement.** Ground plans (Speck, Crawler, Shellback, Burrower, Colossus) stay
-on their support height. Swim, fly and space plans move in three dimensions:
-hold Rise / E or Dive / Q, and forward follows the camera pitch. Each movement
-profile sets speed, acceleration, braking and turn rates.
+**Movement.** Ground plans (Speck, Crawler, Shellback, Burrower, Colossus and
+the shore and land plans) stay on their support height. Swim, fly and space
+plans move in three dimensions: hold Rise / E or Dive / Q, and forward follows
+the camera pitch. A flyer (Sky drifter) that only rises or dives, with no
+forward input, stays level (the coast: nose-down, its nose touched the land
+before its mouth could reach land food), and a flyer within .3 body lengths
+over dry land stops sinking (`LAND_HOVER`): it flies level and the ground step
+carries it over the land (diving nose-first into a slope held it in place).
+Each movement profile sets speed,
+acceleration, braking and turn rates.
 
 **Breach.** Darter and Bulk (size 2, free water) Breach: tap Rise / E within
 2 body lengths under the surface (`BREACH_REACH`, measured from the body's
@@ -413,6 +484,9 @@ lands in the water by its end height (`breachEndY`) with no recovery.
 
 **Start anchors.** Each size has a start anchor: the nearest legal pose to a
 point just above the ground at the origin (in space, `(0, 3 × size, 0)`). A
+body that walks on land and fits nowhere near the origin (a shore or land plan)
+starts on the coast instead: on the island's beach at size 1, and on the
+continent 2.5 body lengths inland from the waterline from size 2. A
 design is valid for a plan only if an anchor exists at growth 1 and at growth
 1.38. Respawn uses the anchor, with 3 s of grace.
 
@@ -434,7 +508,8 @@ do not chase into the player's push zone. A hunter whose target is past the
 soft start (40 units of the player's stage) gives up and goes home, and it does
 not acquire a target there. So the edge current, which holds a fleeing player
 at about 43 units, never holds it for a hunter. The avoidance test also runs
-edge encounters: the player starts at x = 38, the hunter .95 of its notice
+edge encounters: the player starts at x = −38 (the −x edge is open sea at every
+size; the continent is toward +x), the hunter .95 of its notice
 distance further in, and the player flees outward into the current. A Speck
 against the Peach crab was caught at 1.9 s before this rule; every edge
 encounter now ends with the hunter giving up (.5 to 1.1 s).
@@ -501,8 +576,8 @@ Region chips (for example `Head 3 / 4`) are always visible. Two rings show the
 region borders while you place or drag. Kinds the plan bans are hidden, with a
 note. Every problem is listed on desktop; phones show one line. If only one
 copy of a pair fits, the editor asks "Place one?". In the evolve editor,
-**Undo all** returns to the current design and **Fix for me** reapplies the
-automatic adaptation. Done is enabled only for a valid, affordable design with
+**Undo all** returns to the current design and **Fix for me** adapts the draft
+to the plan (`adaptToPlan`). Done is enabled only for a valid, affordable design with
 a start anchor. If the commit fails, the editor stays open with its draft and
 undo history.
 
@@ -835,8 +910,8 @@ Sweep parts are still locked, so her weakness is the Counter.
   the paint and "Copy design".
 - **Notices.** Changes from a migration show once under "WHILE YOU WERE
   AWAY", until "Got it".
-- **Kept saves.** A save this build cannot use (for example, a coast path) is
-  kept untouched. A new run then saves to `tiny-tide-adventure-v4-fresh`. If
+- **Kept saves.** A save this build cannot use (for example, a coast path in a
+  build with `COAST_READY = false`) is kept untouched. A new run then saves to `tiny-tide-adventure-v4-fresh`. If
   both v4 keys are unreadable or kept, the game does not save that session and
   says so.
 - **Legacy keys.** The game never writes `-v1` or `-v2`. Legacy keys are read
@@ -964,6 +1039,26 @@ prints `PASSED: all 12 combat checks`. Pass check ids to run some.
 The check bots dodge: they strafe, press Dash once for each wind-up and aim with
 the pointer. The journey scripts (`tiny-tide.mjs`, `tiny-tide-pacing.mjs`) do the
 same, and they skip a hunter that a ground creature cannot reach.
+
+**Phone quality (owner, 2026-10-07: low frame rate on phones).** The main thread
+of a phone-sized page was idle 84 % of the time; the cost was in drawing: 291 draw
+calls and 1.7M triangles at stage 1, about 40 % of them in the shadow pass (every
+reef plant and every food set cast shadows, and an instanced food set spans the
+whole world). A device whose main pointer is coarse (`?quality=low` or
+`?quality=high` overrides) now draws:
+
+- a pixel ratio of at most 1.3 (1.65 on desktop);
+- hard-edged shadows (`PCFShadowMap`), with only the creature and the actors
+  casting: no reef and no food shadows;
+- instanced food sets culled by the bounds of their drawn instances.
+
+Measured at 390 × 844 (a phone emulation, triangles per frame at stages 0–3):
+.99M / 1.51M / 1.87M / 1.52M before, .65M / .91M / 1.08M / .92M after; draw calls
+at stage 2: 325 before, 188 after. On every device, a dynamic resolution step
+(`adaptResolution`) lowers the pixel ratio by .1 each second while frames average
+over 22 ms (to .85 at least) and raises it by .05 while they average under 14 ms.
+It is off in QA runs (`?qa` or the dev server), which need a steady canvas, unless
+`?autores` is given.
 
 **Known performance item: per-frame garbage (final review I3, accepted at about 540 KB).**
 A played frame at stage 1 allocates about 540 KB (CDP sampling heap profiler, 5 s

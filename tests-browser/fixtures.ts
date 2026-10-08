@@ -1,6 +1,7 @@
 // Development-only fixture page for the Tiny Tide browser tests (served by the dev server; vite.config.ts adds it to the
 // build input only in development mode). Saves are built with the game's own modules, so goals, costs and ledgers come
-// from the code: freshRun, adaptToPlan, applyDesign, prepareEvolution and commitEvolution.
+// from the code: freshRun, adaptToPlan, evolutionProposal (bases.ts), applyDesign, prepareEvolution and commitEvolution.
+import { evolutionProposal } from '../src/tiny-tide/bases';
 import { applyDesign, commitEvolution, currentPlan, damageAfterArmor, freshRun, growthOf, maxHealthOf, prepareEvolution, STAGES, validateRun, type Build, type Run } from '../src/tiny-tide/state';
 import { adaptToPlan, cloneGenome, derive, effectiveStats, nextUid, starterGenome, uidSerial, type Genome } from '../src/tiny-tide/genome';
 import { COAST_READY, eligibleChildren, plan as planById, type BodyPlan } from '../src/tiny-tide/plans';
@@ -109,6 +110,8 @@ export function makeFixture(spec: FixtureSpec = {}): Fixture {
   path.forEach((id, i) => {
     const next = planById(id); if (!next) throw new Error(`fixture: unknown plan ${id}`);
     fund(); run.stageDna = STAGES[run.stage]!.goal;
+    // A construction tool: the fixture adapts the design it has (adaptToPlan), so its added parts fit as they always did. The game's
+    // own proposal is the base body (bases.ts); `info.children` reports that one.
     const a = adaptToPlan(run.genome, next, { unlocked: run.unlocked, anchorCheck: build.anchorCheck }, run.nextPartSerial);
     if (!a.ok) throw new Error(`fixture: ${id}: ${a.reasons[0]}`);
     const d = design(a.genome, a.nextSerial, spec.mouth?.[i + 1], spec.add?.[i + 1]);
@@ -130,7 +133,7 @@ export function makeFixture(spec: FixtureSpec = {}): Fixture {
 function infoOf(run: Run, build: Build) {
   const p = currentPlan(run), d = derive(effectiveStats(run.genome, p));
   const children = eligibleChildren(run.plans, { coast: COAST_READY }).map((c: BodyPlan) => {
-    const a = adaptToPlan(run.genome, c, { unlocked: run.unlocked, anchorCheck: build.anchorCheck }, run.nextPartSerial);
+    const a = evolutionProposal(run, c, build.anchorCheck);
     return { id: c.id, ok: a.ok, changes: a.ok ? a.changes : a.reasons, uids: a.ok ? a.genome.parts.map(x => x.uid) : [], quote: a.ok ? quoteDesign(run.economy, run.genome, a.genome) : null };
   });
   return { plan: p.id, stage: run.stage, armor: d.armor, maxHealth: d.maxHealth, uids: run.genome.parts.map(x => x.uid), parts: run.genome.parts.map(x => ({ uid: x.uid, id: x.id })),

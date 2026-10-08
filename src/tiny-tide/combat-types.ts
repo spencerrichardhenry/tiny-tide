@@ -115,7 +115,9 @@ export interface TraversalPermit { id: string; startsAt: number; expiresAt: numb
 export type HullFit = 'conservative' | 'tight';
 export interface Actor { id: ActorId; hull: readonly Capsule[]; habitat: HabitatProfile; bodyLength: number; fit?: HullFit }   // hull in body space, physical scale, not oriented
 /** slopeBound bounds |∇groundAt|; curvatureBound (default 0, for planar terrains) bounds the spectral norm of its Hessian. */
-export interface Terrain { groundAt(x: number, z: number): number; surface: number; space: boolean; slopeBound: number; curvatureBound?: number }
+export interface Terrain { groundAt(x: number, z: number): number; surface: number; space: boolean; slopeBound: number; curvatureBound?: number;
+  /** Local bounds (the coast): the slope and curvature bounds inside the disc (x, z, reach), at most the global ones. Default: global. */
+  boundsAt?(x: number, z: number, reach: number, out: { slope: number; curvature: number }): { slope: number; curvature: number } }
 export type Constraint = 'ground' | 'surface-top' | 'floor-gap' | 'depth' | 'water' | 'land-band' | 'air' | 'space' | 'bounds-x' | 'bounds-z' | 'bounds-y' | 'refuge' | 'solid';
 export interface AdmissionContext { time: number; permit?: TraversalPermit | null; bounds?: { half: number; maxY?: number } }
 /** On failure, `normal` is the unit direction back into the admitted region at `point` (motion uses it for contacts).

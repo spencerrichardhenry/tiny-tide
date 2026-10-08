@@ -1,3 +1,4 @@
+import { baseSeabedHeight, coastLift, CONTINENT_FOOT_MIN, ISLAND, ISLAND_RADIUS, landmassAt } from './coast';
 import { EDGE_REACH, EDGE_SOFT_START } from './edge';
 import { APPENDED_FROM, SPECIES, tierSpecies, type FoodKind, type Species } from './species';
 
@@ -19,8 +20,11 @@ export const PLAYER_HALF = 50;
 export const WORLD_HALF = EDGE_REACH * PLAYER_HALF;
 /** New food and creatures are placed inside this square (tier-local), outside the edge's push zone. */
 export const SPAWN_HALF = EDGE_SOFT_START * PLAYER_HALF;
+/** The collision ground (physical units): the open-sea seabed plus the coast's island and continent (coast.ts). */
 export function seabedHeight(x: number, z: number) {
-  return Math.sin(x * .075) * Math.cos(z * .055) * 2.4 + Math.sin((x + z) * .018) * 4.5 + Math.sin(x * .006) * Math.sin(z * .009) * 13;
+  // The open sea skips the coast code (a hot path: every ground sample of every admission).
+  const b = baseSeabedHeight(x, z);
+  return x > CONTINENT_FOOT_MIN || (Math.abs(x - ISLAND.x) < ISLAND_RADIUS && Math.abs(z - ISLAND.z) < ISLAND_RADIUS) ? b + coastLift(x, z) : b;
 }
 export function random(seed: number): () => number {
   return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
@@ -85,7 +89,9 @@ export function spawnHeight(spec: Species, x: number, z: number, rand: () => num
     case 'fish': case 'squid': return 22 + rand() * 40;
     case 'bird': return WATER_LEVEL + 20 + rand() * 16;
     case 'boat': return WATER_LEVEL + 4;
-    case 'tree': case 'lighthouse': return WATER_LEVEL + 8;
+    // On its own little island (world.ts draws one), or on the coast's dry land.
+    case 'tree': case 'lighthouse': return ground < WATER_LEVEL - 1 ? WATER_LEVEL + 8 : ground + .5;
+    case 'grove': return ground + .5;
     case 'plane': return WATER_LEVEL + 170 + rand() * 76;
     case 'balloon': return WATER_LEVEL + 220 + rand() * 80;
     case 'planet': return 650 + rand() * 690;
@@ -94,7 +100,35 @@ export function spawnHeight(spec: Species, x: number, z: number, rand: () => num
 }
 /** A physical position for one creature of a species, biased toward its biomes. `blocked` (physical position) rejects a point, for
  *  example one inside a reef solid (owner playtest P4); the last fallback is not checked (installation recovers it). */
+/** True when a spawn fits the coast (coast.ts): land food on the dry land of its landmass; sea life where the water is deep enough
+ *  for it; flyers clear of the land; boats afloat. The open sea (no coast lift) always fits. */
+export function coastFits(spec: Species, x: number, y: number, z: number): boolean {
+  const size = SIZES[spec.tier]!, ground = seabedHeight(x, z);
+  if (spec.zone) return landmassAt(x, z) === spec.zone && ground > WATER_LEVEL + .2 * size;
+  if (spec.tier >= 4 || coastLift(x, z) === 0) return true;
+  switch (spec.habitatProfileId) {
+    case 'sp-prop': return true;
+    case 'sp-air': return y > ground + 4 * size;
+    case 'sp-surface': return ground < WATER_LEVEL - 10;
+    // Sea life also keeps off the coast's steep flanks, where a seabed walker could not reach it.
+    default: return ground < WATER_LEVEL - Math.min(1.5 * size, 10) && y < WATER_LEVEL - .5 * size && y > ground &&
+      Math.hypot(seabedHeight(x + 1, z) - seabedHeight(x - 1, z), seabedHeight(x, z + 1) - seabedHeight(x, z - 1)) / 2 < .9;
+  }
+}
+/** A point on the dry land of a land food's landmass (physical), inside the spawn square; null after 200 tries. */
+function landPoint(spec: Species, rand: () => number, avoid?: { x: number; z: number; radius: number }) {
+  const size = SIZES[spec.tier]!, half = SPAWN_HALF * size;
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const x = spec.zone === 'island' ? ISLAND.x + (rand() * 2 - 1) * ISLAND_RADIUS : CONTINENT_FOOT_MIN + rand() * (half - CONTINENT_FOOT_MIN);
+    const z = spec.zone === 'island' ? ISLAND.z + (rand() * 2 - 1) * ISLAND_RADIUS : (rand() * 2 - 1) * half;
+    if (Math.max(Math.abs(x), Math.abs(z)) > half || (avoid && Math.hypot(x - avoid.x, z - avoid.z) < avoid.radius)) continue;
+    const y = spawnHeight(spec, x, z, rand);
+    if (coastFits(spec, x, y, z)) return { x, y, z };
+  }
+  return null;
+}
 export function spawnPoint(spec: Species, biomes: readonly Biome[], rand: () => number, avoid?: { x: number; z: number; radius: number }, blocked?: (x: number, y: number, z: number) => boolean) {
+  if (spec.zone) { const p = landPoint(spec, rand, avoid); if (p) return p; }
   const size = SIZES[spec.tier]!, best = Math.max(1, ...biomes.map(b => b.weights[spec.kind] ?? 1));
   for (let attempt = 0; attempt < 60; attempt++) {
     const x = (rand() * 2 - 1) * SPAWN_HALF, z = (rand() * 2 - 1) * SPAWN_HALF;
@@ -106,7 +140,8 @@ export function spawnPoint(spec: Species, biomes: readonly Biome[], rand: () => 
     if (blocked && blocked(x * size, y, z * size)) continue;
     return { x: x * size, y, z: z * size };
   }
-  return { x: SPAWN_HALF * size * .8, y: spawnHeight(spec, 0, 0, rand), z: 0 };
+  // The last fallback is on the −x axis: open sea at every size (the continent is toward +x, the island off the axis).
+  return { x: -SPAWN_HALF * size * .8, y: spawnHeight(spec, 0, 0, rand), z: 0 };
 }
 export interface Spawn { id: number; spec: Species; x: number; y: number; z: number; phase: number }
 /** The opening population of every tier. The ids are stable for a seed. A point that `blocked(tier, x, y, z)` rejects (a reef solid,
@@ -118,10 +153,12 @@ export function populate(seed: number, blocked?: (tier: number, x: number, y: nu
   for (let tier = 0; tier < SIZES.length; tier++) {
     const rand = random(seed * 7 + tier * 119 + 8721), biomes = makeBiomes(seed, tier), block = (x: number, y: number, z: number) => !!blocked?.(tier, x, y, z);
     const firsts = new Set<string>();
-    for (const spec of tierSpecies(tier)) for (let i = 0; i < spec.count; i++) {
+    for (const spec of tierSpecies(tier).filter(x => !x.zone)) for (let i = 0; i < spec.count; i++) {
       let point = spec.kind === 'planet' ? planetPoint(i, rand) : spawnPoint(spec, biomes, rand);
       const key = SPECIES.indexOf(spec) < APPENDED_FROM ? legacy++ : 100_000 + id;
-      if (spec.kind !== 'planet' && block(point.x, point.y, point.z)) point = spawnPoint(spec, biomes, random(seed * 977 + key * 31 + 5), undefined, block);
+      // A spawn the coast does not fit (coast.ts) moves the same way, so every other spawn of the seed stays where it was.
+      const fits = (x: number, y: number, z: number) => !block(x, y, z) && coastFits(spec, x, y, z);
+      if (spec.kind !== 'planet' && !fits(point.x, point.y, point.z)) point = spawnPoint(spec, biomes, random(seed * 977 + key * 31 + 5), undefined, (x, y, z) => !fits(x, y, z));
       // A few landmarks are placed where the opening camera can see them.
       if (!firsts.has(spec.key)) {
         firsts.add(spec.key);
@@ -132,6 +169,11 @@ export function populate(seed: number, blocked?: (tier: number, x: number, y: nu
       }
       out.push({ id: id++, spec, ...point, phase: rand() * Math.PI * 2 });
     }
+  }
+  // The coast's land food (coast.ts) comes after every other spawn, each species with its own RNG: no earlier id or place moves.
+  for (const spec of SPECIES.filter(x => x.zone)) {
+    const rand = random(seed * 389 + SPECIES.indexOf(spec) * 7919 + 17), biomes = makeBiomes(seed, spec.tier);
+    for (let i = 0; i < spec.count; i++) out.push({ id: id++, spec, ...spawnPoint(spec, biomes, rand), phase: rand() * Math.PI * 2 });
   }
   return out;
 }

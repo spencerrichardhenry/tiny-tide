@@ -2,8 +2,9 @@ import { startAnalytics } from '../analytics';
 import * as T from 'three';
 import './style.css';
 import './hud.css';
-import { applyDesign, commitEvolution, stageDescription, currentPlan, damageAfterArmor, dietCanEat, dnaOf, evolveReady, freshRun, growthOf, parseSaveWithNotes, PLANET_COUNT, prepareEvolution, STAGES, type Build, type Run } from './state';
-import { adaptToPlan, derive, dietOf, effectiveStats } from './genome';
+import { applyDesign, commitEvolution, landOf, stageDescription, currentPlan, damageAfterArmor, dietCanEat, dnaOf, evolveReady, freshRun, growthOf, parseSaveWithNotes, PLANET_COUNT, prepareEvolution, STAGES, type Build, type Run } from './state';
+import { derive, dietOf, effectiveStats, type Adaptation } from './genome';
+import { evolutionProposal } from './bases';
 import { part } from './parts';
 import { tierSpecies } from './species';
 import { PLAYER_HALF, seabedHeight, SIZES, SPAWN_HALF } from './biomes';
@@ -112,6 +113,7 @@ catch {
 }
 const SAVE_KEY = 'tiny-tide-adventure-v4';
 const QA = import.meta.env.DEV || new URLSearchParams(location.search).has('qa');
+const AUTO_RES = new URLSearchParams(location.search).has('autores');
 /** QA: the admission time (every overlapHull call: player, ecosystem, food guide) of each played frame, summed per stage, in total and
  *  per caller, with the player's contacts. Only calls made inside a played frame count (the clock resets when a frame starts). */
 admissionClock.on = QA;
@@ -428,7 +430,8 @@ function objective() {
   const foods = tierSpecies(run.stage).filter(s => dietCanEat(diet, s.tag) && reachable.has(s.key)).map(s => s.label.toLowerCase());
   if (foods.length === 0) return 'Explore to find a snack you can reach.';
   const list = foods.length > 3 ? `${foods.slice(0, 3).join(', ')} & more` : foods.join(' & ');
-  const caps = capsOf(), move = caps.breach ? 'Breach for gulls!' : caps.rise ? 'Rise / Dive to explore.' : 'Graze along the seabed.';
+  const caps = capsOf(), land = landOf(currentPlan(run));
+  const move = caps.breach ? 'Breach for gulls!' : caps.rise ? 'Rise / Dive to explore.' : land === 'land' ? 'Roam the dry land.' : land ? 'Roam the beach and the shallows.' : 'Graze along the seabed.';
   return `Eat ${list}. ${run.stage === 0 ? (coarsePointer() ? 'Swipe the world to look around.' : 'Middle-drag the world to look around.') : run.stage === 3 ? 'Watch out for seaplanes.' : move}`;
 }
 function begin(fresh = false) {
@@ -437,7 +440,7 @@ function begin(fresh = false) {
   world.build(next.stage, next); el('evolution-banner').hidden = true; el('faint').hidden = true; clearInput(); readyToasted = evolveReady(next); lastBiome = '';
   hintClock = 0; blockGate.blockedFor = 0; blockGate.shown = false; contactNow = false; lastContact = null; lastContactSolid = null; edgeNow = false; edgeHinted = false;
   el('home').hidden = true; el('game-ui').hidden = false; el('pause').hidden = false; el('edit').hidden = false; el('corner-note').hidden = true; el('mode-label').textContent = 'NIBBLE. GROW. REPEAT.';
-  document.body.classList.add('is-playing'); toast(stageDescription(next.stage, movementCapabilities(currentPlan(next))), 'stage');
+  document.body.classList.add('is-playing'); toast(stageDescription(next.stage, movementCapabilities(currentPlan(next)), landOf(currentPlan(next))), 'stage');
   // A pending respawn ignores the forced spawn (it stays for the next start).
   const forced = next.pendingRespawn ? null : forcedSpawn; if (!next.pendingRespawn) forcedSpawn = null;
   respawnToasted = false;
@@ -484,7 +487,9 @@ async function edit(kind: 'edit' | 'evolve') {
 async function chooseEvolution() {
   const current = currentPlan(run);
   const choices: PathChoice[] = eligibleChildren(run.plans, BUILD).map(plan => {
-    const adaptation = adaptToPlan(run.genome, plan, { unlocked: run.unlocked, anchorCheck: BUILD.anchorCheck }, run.nextPartSerial);
+    // Every evolution starts from the new plan's base body (bases.ts): the old parts come off and their DNA comes back. When the
+    // starter parts cost more than the creature has, the base keeps only the mouth and the required parts.
+    const adaptation: Adaptation = evolutionProposal(run, plan, BUILD.anchorCheck);
     return { plan, adaptation, quote: adaptation.ok ? quoteDesign(run.economy, run.genome, adaptation.genome) : null, leadsTo: leadsTo(plan, run.plans, BUILD), summary: cardSummary(current, plan, run.plans) };
   });
   for (;;) {
@@ -1038,6 +1043,8 @@ function syncAimChevron(intent: CombatInput) {
 let frameNo = 0;
 function frame(now: number) {
   requestAnimationFrame(frame); frameNo++;
+  // Dynamic resolution (phones): off in QA runs, which need a steady canvas, unless `?autores` asks for it.
+  if (!QA || AUTO_RES) world.adaptResolution(now - last);
   const dt = Math.min((now - last) / 1000, .05); last = now;
   if (admissionClock.on) { resetAdmissionClock(); admissionClock.caller = 'player'; frameContacts = 0; }
   // The game clock runs in these modes only (not while paused, editing, stuck or won); sim.ts decides it the same way.
@@ -1082,7 +1089,7 @@ function frame(now: number) {
     // The body ends at the simulation's destination; if the world changed, recover.
     mode = 'playing'; el('evolution-banner').hidden = true;
     const events: SimEvent[] = []; checkPose(sim, simWorld, playerActorCached(), events); presentSim(events, 0);
-    if (mode === 'playing') toast(stageDescription(run.stage, capsOf()), 'stage');
+    if (mode === 'playing') toast(stageDescription(run.stage, capsOf(), landOf(currentPlan(run))), 'stage');
     syncUI();
   }
   const depth = world.player.position.y / world.surface;
@@ -1190,6 +1197,8 @@ function combatDiagnostics() {
 }
 // Read-only diagnostics allow browser verification to steer with real controls.
 if (QA) {
+  // The renderer and scene, for render measurements (the phone frame-rate checks).
+  Object.defineProperty(window, '__tinyTideWorld', { get: () => ({ renderer: world.renderer, scene: world.scene, resolution: world.resolution }) });
   const copy = (v: Vec3) => ({ x: v.x, y: v.y, z: v.z });
   Object.defineProperty(window, '__tinyTide', { get: () => ({ mode, input: { basicHeld: lastIntent.basicHeld, activeHeld: [...lastIntent.activeHeld], aim: lastIntent.aim && copy(lastIntent.aim), aimSource: lastIntent.aimSource, aimPick: lastAimPick && copy(lastAimPick), touchMode },
     plan: currentPlan(run).id, plans: [...run.plans], zone: zoneNow(), velocity: copy(rt.controlledVelocity), externalVelocity: copy(rt.externalVelocity),

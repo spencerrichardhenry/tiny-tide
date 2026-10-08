@@ -3,6 +3,7 @@
 // Placement rules: a plant's whole footprint (its widest horizontal reach) is clear of every solid's footprint, so no rock sits
 // under or around a plant; solid footprints never overlap each other; a rock sits beside its plant and an arch frames it from the
 // other side, with its opening facing the plant; both feet of an arch stand in the seabed.
+import { coastLift } from './coast';
 import { biomeAt, makeBiomes, random, seabedHeight, SIZES } from './biomes';
 import { colliderMesh, meshShape, solidOf, SolidIndex, sphereShape, newContact, type CapsuleShape, type ColliderMesh, type Solid, type SolidShape } from './solids';
 import colliders from './reef-colliders.json';
@@ -140,7 +141,9 @@ export function placeReef(layer: number, seed: number): ReefLayer {
   const rand = random((seed ^ 0x2f6b) + layer * 0x9e37), biomes = makeBiomes(seed, layer), tierSize = SIZES[layer]!, gap = .15 * size;
   const plantClear = (x: number, z: number, R: number) => out.solids.every(s => footprintClear(s, x, z, R));
   // A new solid's cover discs must clear every earlier solid and every plant's footprint.
-  const solidClear = (solid: Solid) => coverDiscs(solid).every(([x, z, R]) => plantClear(x, z, R + gap) && out.plants.every(p => Math.hypot(p.x - x, p.z - z) >= p.footprint + R + gap));
+  // The reef keeps off the coast (coast.ts): no plant or solid where the island or the continent lifts the ground under it.
+  const offCoast = (x: number, z: number, R: number) => [[0, 0], [R, 0], [-R, 0], [0, R], [0, -R]].every(([dx, dz]) => coastLift(x + dx!, z + dz!) === 0);
+  const solidClear = (solid: Solid) => coverDiscs(solid).every(([x, z, R]) => offCoast(x, z, R) && plantClear(x, z, R + gap) && out.plants.every(p => Math.hypot(p.x - x, p.z - z) >= p.footprint + R + gap));
   for (let i = 0; i < REEF_TRIES; i++) {
     const a = rand() * Math.PI * 2, r = (REEF_INNER + rand() * REEF_SPAN) * size, x = Math.cos(a) * r, z = Math.sin(a) * r;
     const decor = biomeAt(biomes, x / tierSize, z / tierSize).decor;
@@ -150,7 +153,7 @@ export function placeReef(layer: number, seed: number): ReefLayer {
     const heavy = decor === 'rock' ? 1.7 : 1, sx = size * (.8 + rand()) * heavy, sy = size * (.7 + rand() * .4) * heavy, sz = size * (1 + rand()) * heavy;
     // The rock goes beside the plant, the arch (if any) on the other side.
     const side = rand() * Math.PI * 2;
-    if (plantClear(x, z, footprint + gap)) out.plants.push({ asset, x, y: seabedHeight(x, z), z, scale, footprint });
+    if (offCoast(x, z, footprint) && plantClear(x, z, footprint + gap)) out.plants.push({ asset, x, y: seabedHeight(x, z), z, scale, footprint });
     const reach = Math.max(sx * ROCK_RADII[0], sz * ROCK_RADII[2]) * ROCK_FIT, d = footprint + reach + 2 * gap;
     const rx = x + Math.cos(side) * d, rz = z + Math.sin(side) * d, ry = seabedHeight(rx, rz) - .2 * size;
     const rockAsset = `reef_rock_${i % 2}` as Rock['asset'];

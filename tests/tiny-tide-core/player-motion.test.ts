@@ -36,6 +36,12 @@ describe('player step: velocities', () => {
     const c = newRuntime(); stepPlayer({ x: 0, y: 2.6, z: 0 }, c, intent({ traversal: 'rise' }), ctxFor('crawler', ball('seabed', 2.5, 10), sea()));
     expect(c.controlledVelocity.y).toBe(0);
   });
+  it('keeps a flyer level when it only sinks or rises (the coast: a nose-down flyer could not reach land food); a swimmer still pitches', () => {
+    const fly = newRuntime(); stepPlayer({ x: 0, y: 200, z: 0 }, fly, intent({ traversal: 'dive' }), ctxFor('sky_drifter', ball('sky-sea', 2, 10), deep));
+    expect(fly.orientation.pitch).toBe(0); expect(fly.controlledVelocity.y).toBeLessThan(0);
+    const swim = newRuntime(); stepPlayer({ x: 0, y: 40, z: 0 }, swim, intent({ traversal: 'dive' }), ctxFor('swimmer', ball('open-water', 2, 10), sea()));
+    expect(swim.orientation.pitch).toBeLessThan(0);
+  });
   it('normalizes a diagonal plus rise to the top speed', () => {
     const rt = newRuntime(); let p: Vec3 = { x: 0, y: 40, z: 0 };
     for (let i = 0; i < 120; i++) p = stepPlayer(p, rt, intent({ traversal: 'rise' }), ctxFor('swimmer', ball('open-water', .5, 2), deep, { now: i / 60, dt: 1 / 60, wish: { x: Math.SQRT1_2, y: 0, z: Math.SQRT1_2 } })).position;

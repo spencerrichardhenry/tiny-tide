@@ -67,7 +67,7 @@ describe('edge current in the player step (600 frames of full push)', () => {
     return { p, rt, maxReach, boundsContacts, refused, outsideInner, half, breaches, startY, startZone };
   };
   const cases: [string, Body][] = [['Darter', body('darter', 2)], ['Darter at the top speed factor', body('darter', 2, 1.65)], ['Crawler', body('crawler', 1)], ['Swimmer', body('swimmer', 1)]];
-  for (const [name, b] of cases) for (const [label, dir] of [['+x', { x: 1, z: 0 }], ['a corner', { x: 1, z: -1 }]] as const) {
+  for (const [name, b] of cases) for (const [label, dir] of [['−x', { x: -1, z: 0 }], ['a corner', { x: -1, z: 1 }]] as const) {   // open sea (the coast is at +x and −x −z)
     it(`keeps a ${name} pushing toward ${label} 0.5 L inside the hard bound, then drifts it inward on release`, () => {
       const r = run(b, dir, 600);
       expect(r.refused, 'refused poses').toBe(0); expect(r.boundsContacts, 'bounds contacts').toBe(0); expect(r.outsideInner, 'frames past the bound minus 0.5 L').toBe(0);
@@ -92,7 +92,7 @@ describe('edge current in the player step (600 frames of full push)', () => {
   });
   it('pushes a Darter back during Breach arcs at the edge', () => {
     // The grown hull (growth 1.38). It starts at the arc's end height, which the grown hull fits (breachEndY, owner playtest P3).
-    const b = body('darter', 2), endY = breachEndY(b.actor, WATER_LEVEL, b.size), r = run(b, { x: 1, z: 0 }, 600, undefined, { y: endY, breach: true });
+    const b = body('darter', 2), endY = breachEndY(b.actor, WATER_LEVEL, b.size), r = run(b, { x: -1, z: 0 }, 600, undefined, { y: endY, breach: true });
     expect(r.startY).toBe(endY); expect(r.startZone.medium).toBe('water');
     expect(r.breaches, 'Breach arcs started').toBeGreaterThanOrEqual(3);
     expect(r.refused, 'refused poses').toBe(0); expect(r.boundsContacts, 'bounds contacts').toBe(0); expect(r.outsideInner).toBe(0);

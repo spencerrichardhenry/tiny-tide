@@ -1,7 +1,8 @@
 // Creature behavior for every tier. Positions are physical units (stage 0 units).
 // Active tiers (|tier − stage| ≤ 1) move through the motion resolver, perceive, pursue (spec §10) and emit contact hazards.
 // Every entry path (construction, reset, respawn, becoming relevant) installs an entity on a legal pose.
-import { makeBiomes, PLAYER_HALF, populate, seabedHeight, SIZES, SPAWN_HALF, spawnPoint, WORLD_HALF, random, type Biome, type Spawn } from './biomes';
+import { coastLift } from './coast';
+import { coastFits, makeBiomes, PLAYER_HALF, populate, seabedHeight, SIZES, SPAWN_HALF, spawnPoint, WORLD_HALF, random, type Biome, type Spawn } from './biomes';
 import { EDGE_SOFT_START } from './edge';
 import type { Actor, AdmissionContext, Capsule, ContactHazard, LegalityContext, MotionRequest, MovementMode, MutVec3, Orientation, PursuitPolicy, Vec3, WorldQueries } from './combat-types';
 import { findRecoveryPose, projectVelocity, resolveMotion } from './motion';
@@ -109,7 +110,10 @@ export const HOME_LIFT = .05;
 export function lairOf(seed: number, e: { id: number; spec: Species }): Vec3 {
   const a = e.spec.alpha!, S = SIZES[a.size]!, lair = BEHAVIOURS[e.spec.behaviourId!]!.lair!, radius = lair.radiusBodyLengths * speciesActor(e).bodyLength;
   const rand = random(seed * 131 + e.id * 7 + 3), angle = Math.PI / 4 + Math.floor(4 * rand()) * Math.PI / 2 + (rand() - .5) * .1;
-  const d = lair.resetOutsideFactor * radius + 5 * longestPlayerAt(a.size) + (1 + rand()) * S, x = Math.sin(angle) * d, z = Math.cos(angle) * d;
+  const d = lair.resetOutsideFactor * radius + 5 * longestPlayerAt(a.size) + (1 + rand()) * S;
+  // The coast (coast.ts) takes one corner of the size-1 square: a lair there turns to the next diagonal.
+  let x = Math.sin(angle) * d, z = Math.cos(angle) * d;
+  for (let k = 1; k < 4 && coastLift(x, z) > 0; k++) { x = Math.sin(angle + k * Math.PI / 2) * d; z = Math.cos(angle + k * Math.PI / 2) * d; }
   return { x, y: seabedHeight(x, z) + HOME_LIFT * .35 * SIZES[e.spec.tier]! * (e.spec.bodyScale ?? 1), z };
 }
 /** A school member's place (spec §11.3): a school spawns as a group of `school.groupSize` within 2 L of the group's first member (its
@@ -566,7 +570,7 @@ export class Ecosystem {
     }
     // An eel comes back to its den (spec §11.3); everything else to a fresh point out of sight.
     const tier = e.spec.tier, point = hasDen(e.spec) ? denOf(this.seed, e)
-      : spawnPoint(e.spec, this.biomes[tier]!, this.rand, { x: ctx.player.x, z: ctx.player.z, radius: away }, (x, y, z) => inReef(this.seed)(tier, x, y, z));
+      : spawnPoint(e.spec, this.biomes[tier]!, this.rand, { x: ctx.player.x, z: ctx.player.z, radius: away }, (x, y, z) => inReef(this.seed)(tier, x, y, z) || !coastFits(e.spec, x, y, z));
     Object.assign(e, { x: point.x, y: point.y, z: point.z, hx: point.x, hy: point.y, hz: point.z, groundOffset: point.y - seabedHeight(point.x, point.z) }, fresh);
     this.install(e);
   }

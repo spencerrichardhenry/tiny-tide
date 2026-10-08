@@ -2,6 +2,7 @@
 // Motion is a series of straight legs. Each leg has a fixed slot schedule inside [start, end]; a contact ends the leg and the
 // projected remainder starts a new leg from the contact point and time. Every admission query time lies in [start, end].
 import { SIZES } from './biomes';
+import { landStart } from './coast';
 import type { Actor, Admission, AdmissionContext, Contact, LegalityContext, MotionRequest, MotionResult, MutVec3, Orientation, RecoveryResult, Vec3, WorldQueries } from './combat-types';
 import { hullExtents, supportHeight } from './world-queries';
 
@@ -257,9 +258,15 @@ export function findRecoveryPose(actor: Actor, near: Vec3, ctx: LegalityContext 
   return { ok: false, reason: NO_POSE };
 }
 
-/** Recovery from just above the ground at the origin (space: (0, 3 × size, 0)), level, at time 0, within 60 body lengths. */
+/** Recovery from just above the ground at the origin (space: (0, 3 × size, 0)), level, at time 0, within 60 body lengths. A body that
+ *  walks on land and fits nowhere there (a shore or land plan in the open sea) starts on the coast (coast.ts): the island at size 1,
+ *  the continent from size 2. */
 export function startAnchor(actor: Actor, stage: number, ctx: LegalityContext): RecoveryResult {
   const o0: Orientation = { yaw: 0, pitch: 0 }, t = ctx.queries.terrain, L = actor.bodyLength;
-  const near: Vec3 = t.space ? { x: 0, y: 3 * SIZES[stage]!, z: 0 } : { x: 0, y: supportHeight(actor, 0, 0, o0, t) + .01 * L, z: 0 };
-  return findRecoveryPose(actor, near, { ...ctx, orientation: o0, time: 0 }, { maxDistance: 60 * L });
+  const from = (x: number, z: number) => findRecoveryPose(actor, { x, y: supportHeight(actor, x, z, o0, t) + .01 * L, z }, { ...ctx, orientation: o0, time: 0 }, { maxDistance: 60 * L });
+  if (t.space) return findRecoveryPose(actor, { x: 0, y: 3 * SIZES[stage]!, z: 0 }, { ...ctx, orientation: o0, time: 0 }, { maxDistance: 60 * L });
+  const r = from(0, 0);
+  if (r.ok || !actor.habitat.media.includes('land')) return r;
+  const land = landStart(stage <= 1 ? 'island' : 'continent', 2.5 * L);
+  return from(land.x, land.z);
 }

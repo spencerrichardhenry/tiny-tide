@@ -2,7 +2,9 @@ import type { SpeciesCombatFields } from './combat-types';
 // Everything that lives (or floats, or sails) in the Tiny Tide universe.
 export type FoodKind = 'plant' | 'kelp_snack' | 'seagrape' | 'lettuce' | 'copepod' | 'worm' | 'shrimp' | 'crab' | 'jellyfish' | 'snail' | 'fish' | 'squid' | 'ray' | 'bird' | 'tree' | 'boat' | 'plane' | 'balloon' | 'lighthouse' | 'planet'
   /** Combat species of sizes 0, 1 and 2 (spec §11.3); each draws an existing GLB through `model`. */
-  | 'drifter' | 'spiny_snail' | 'clawmother' | 'sardine' | 'puffer' | 'eel' | 'reef_tyrant';
+  | 'drifter' | 'spiny_snail' | 'clawmother' | 'sardine' | 'puffer' | 'eel' | 'reef_tyrant'
+  /** Land food of the coast (coast.ts): the island at size 1, the continent at sizes 2 and 3. */
+  | 'beach_berry' | 'beach_clam' | 'dune_melon' | 'land_crab' | 'grove';
 export type FoodTag = 'plant' | 'meat' | 'any';
 export type Behavior = 'still' | 'drift' | 'graze' | 'school' | 'skittish' | 'flyer';
 export interface Species extends SpeciesCombatFields {
@@ -25,6 +27,8 @@ export interface Species extends SpeciesCombatFields {
   tint?: string;
   /** An alpha: present only while the player's size equals `size`; defeating it unlocks `rewardPartId` and pays `rewardDna`. */
   alpha?: { size: number; rewardPartId: string; rewardDna: number };
+  /** Land food: it spawns only on the dry land of this landmass (coast.ts). */
+  zone?: 'island' | 'continent';
 }
 const habitatOf = (behavior: Behavior) => behavior === 'flyer' ? 'sp-air' : behavior === 'still' || behavior === 'graze' ? 'sp-seabed' : 'sp-water';
 const movementOf = (behavior: Behavior) => behavior === 'flyer' ? 'sp-fly' : behavior === 'still' ? 'sp-still' : behavior === 'graze' ? 'sp-ground' : 'sp-swim';
@@ -69,6 +73,13 @@ export const SPECIES: readonly Species[] = [
   // places stay (each tier has its own random stream, and a reef fallback is seeded by the legacy key).
   s(2, 'reef_tyrant', 'meat', 'Reef Tyrant', 'skittish', 1, 0, { hp: 110, speed: 1.5, model: 'worm', tint: '#4b2f5e', bodyScale: 1.6, behaviourId: 'reef-tyrant', hunts: [1], fights: true, pursuitId: 'hunter',
     attackIds: ['tyrant-bite', 'tyrant-den-lunge', 'tyrant-charge', 'tyrant-whirl'], alpha: { size: 1, rewardPartId: 'mouth_tyrant', rewardDna: 60 } }),
+  // The coast's land food (sub-project 2), after every other row: it feeds the shore and land plans, which cannot reach the sea food.
+  // Still and static (sp-prop), on dry land only (`zone`). Each reuses a food GLB with a tint.
+  s(1, 'beach_berry', 'plant', 'Beach berries', 'still', 14, 13, { model: 'seagrape', tint: '#e0567a', zone: 'island', habitatProfileId: 'sp-prop' }),
+  s(1, 'beach_clam', 'meat', 'Beach clam', 'still', 14, 14, { model: 'snail', tint: '#f3e6cc', zone: 'island', habitatProfileId: 'sp-prop' }),
+  s(2, 'dune_melon', 'plant', 'Dune melon', 'still', 18, 18, { model: 'seagrape', tint: '#9ccf5a', bodyScale: 1.3, zone: 'continent', habitatProfileId: 'sp-prop' }),
+  s(2, 'land_crab', 'meat', 'Coconut crab', 'still', 12, 22, { model: 'crab', tint: '#8a5634', zone: 'continent', habitatProfileId: 'sp-prop' }),
+  s(3, 'grove', 'any', 'Pine grove', 'still', 12, 24, { model: 'tree', tint: '#6f9f5b', zone: 'continent', habitatProfileId: 'sp-prop' }),
 ];
 /** The index of the first row appended by combat sub-project 3a: earlier rows keep the reef-fallback RNG of their spawns (populate). */
 export const APPENDED_FROM = SPECIES.findIndex(spec => spec.key === '0:drifter');

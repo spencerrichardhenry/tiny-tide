@@ -4,7 +4,7 @@ import { biomeAt, followDistance, followScaleStep, followScaleTarget, PLAYER_HAL
 import { REEF_LAYERS, reefLayer, reefLayerVisible } from './reef';
 import { EDGE_FADE_END, EDGE_SOFT_START } from './edge';
 import { CreatureModel } from './creature';
-import { SEABED_RINGS, seabedCoarseGeometry, seabedCoarseVisible, seabedRingGeometry, seabedRingVisible, type SeabedRing } from './seabed-mesh';
+import { islandGeometry, SEABED_RINGS, seabedCoarseGeometry, seabedCoarseVisible, seabedRingGeometry, seabedRingVisible, type SeabedRing } from './seabed-mesh';
 import { Ecosystem, type Entity } from './ecosystem';
 import type { Vec3 } from './combat-types';
 import type { Genome } from './genome';
@@ -72,6 +72,11 @@ vEdgeWorld = (modelMatrix * edgeP).xyz;`);
 #ifdef USE_FOG
 if (vEdgeWorld.y < edgeTop) gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, edgeFade * smoothstep(${EDGE_FADE_FROM.toFixed(2)}, ${EDGE_FADE_TO.toFixed(2)}, max(abs(vEdgeWorld.x), abs(vEdgeWorld.z))));
 #endif`);
+}
+/** The render quality: `?quality=low|high`, else low on a device whose main pointer is coarse (a phone or a tablet). */
+function quality(): boolean {
+  const q = new URLSearchParams(location.search).get('quality');
+  return q === 'low' ? true : q === 'high' ? false : matchMedia('(pointer: coarse)').matches;
 }
 function ownMesh(geometry: T.BufferGeometry, mat: T.Material, ownsMaterial = false) {
   const mesh = new T.Mesh(geometry, mat); mesh.userData.ownedGeometry = true; mesh.userData.ownedMaterial = ownsMaterial; return mesh;
@@ -148,6 +153,7 @@ export class TideWorld {
   /** The far seabed rings (seabed-mesh.ts), each shown only where it can be seen at the current scale. */
   private seabedRings: { ring: SeabedRing; mesh: T.Mesh }[] = [];
   private seabedCoarse!: T.Mesh;
+  private islandGround!: T.Mesh;
   private sceneryMaterials: T.Material[] = [];
   private homePlanetMaterials: T.Material[] = [];
   private instances: { mesh: T.InstancedMesh; foods: FoodObject[]; local: T.Matrix4 }[] = [];
@@ -156,10 +162,21 @@ export class TideWorld {
   /** 0–1: how far the edge fog has closed in (diagnostics). */
   private edgeFog = 0;
 
+  /** Phone quality (owner, 2026-10-07: low frame rate on phones): a touch-first device draws fewer pixels, hard-edged shadows and no
+   *  reef shadows. `?quality=low` or `?quality=high` overrides the guess. */
+  readonly lowPower = quality();
+  /** The highest and lowest pixel ratio; the frame-time scaler (adaptResolution) moves between them. */
+  private readonly maxPixelRatio = Math.min(devicePixelRatio, this.lowPower ? 1.3 : 1.65);
+  private readonly minPixelRatio = Math.min(this.maxPixelRatio, .85);
+  private pixelRatio = this.maxPixelRatio;
+  private frameMs = 1000 / 60;
+  private resolutionClock = 0;
+  private reefShadow: boolean[] = [];
+
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.65));
-    this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = T.PCFSoftShadowMap;
+    this.renderer.setPixelRatio(this.pixelRatio);
+    this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = this.lowPower ? T.PCFShadowMap : T.PCFSoftShadowMap;
     this.renderer.outputColorSpace = T.SRGBColorSpace; this.renderer.toneMapping = T.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.05;
     this.scene.add(new T.HemisphereLight('#c3f5f4', '#396c6c', 2));
     this.sun = new T.DirectionalLight('#fff0cb', 2.6); this.sun.position.set(-12, 28, 14); this.sun.castShadow = true; this.sun.shadow.mapSize.set(1024, 1024);
@@ -188,6 +205,10 @@ export class TideWorld {
     });
     this.seabedCoarse = ownMesh(seabedCoarseGeometry(), sand!); this.seabedCoarse.castShadow = false; this.seabedCoarse.receiveShadow = true; this.seabedCoarse.name = 'Seabed coarse ring';
     this.scenery.add(this.seabedCoarse);
+    // The coast's island (coast.ts) has its own fine mesh over the rings; the polygon offset keeps it in front where they meet.
+    const islandSand = (sand as T.Material).clone(); islandSand.polygonOffset = true; islandSand.polygonOffsetFactor = -1; islandSand.polygonOffsetUnits = -4;
+    this.islandGround = ownMesh(islandGeometry(), islandSand, true); this.islandGround.castShadow = false; this.islandGround.receiveShadow = true; this.islandGround.name = 'Island ground';
+    this.scenery.add(this.islandGround);
     this.scenery.add(this.reef, this.islands);
     this.caustics = new T.ShaderMaterial({ uniforms: { time: { value: 0 }, fade: { value: 1 } }, transparent: true, depthWrite: false,
       vertexShader: 'varying vec2 p; void main(){p=position.xz;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
@@ -242,7 +263,7 @@ export class TideWorld {
    *  (reef.ts `placeReef`); the same rocks and arches are the solids of the gameplay queries. */
   private buildReef(seed: number) {
     for (const lod of this.lods) { lod.group.traverse(o => { if (o instanceof T.Mesh) o.geometry.dispose(); }); }
-    this.reef.clear(); this.lods = [];
+    this.reef.clear(); this.lods = []; this.reefShadow = [];
     // Reef details at several physical sizes are present together, before any evolution.
     REEF_LAYERS.forEach((size, layer) => {
       const raw = new T.Group(), reef = reefLayer(layer, seed);
@@ -288,7 +309,7 @@ export class TideWorld {
       if (kind === 'planet') this.actors.add(model);
       const food: FoodObject = { entity, model, tier: spec.tier, tint: new T.Color(spec.tint ?? '#ffffff'), data: { id: entity.id, kind, tier: spec.tier, x: 0, y: 0, z: 0, eaten: false, phase: entity.phase } };
       this.foods.push(food); if (home) this.homePlanet = food;
-      if (kind === 'tree' || kind === 'lighthouse') {
+      if ((kind === 'tree' || kind === 'lighthouse') && seabedHeight(entity.hx, entity.hz) < WATER_LEVEL - 1) {
         const island = sceneryAsset('island'); island.position.set(entity.hx, WATER_LEVEL - 1, entity.hz); island.scale.setScalar(64); islands.add(island);
       }
     }
@@ -299,11 +320,23 @@ export class TideWorld {
       prefab.traverse(child => {
         if (!(child instanceof T.Mesh) || Array.isArray(child.material)) return;
         const mesh = new T.InstancedMesh(child.geometry, child.material, foods.length);
-        mesh.instanceMatrix.setUsage(T.DynamicDrawUsage); for (let i = 0; i < foods.length; i++) mesh.setColorAt(i, foods[i]!.tint); mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
+        mesh.instanceMatrix.setUsage(T.DynamicDrawUsage); for (let i = 0; i < foods.length; i++) mesh.setColorAt(i, foods[i]!.tint); mesh.castShadow = true; mesh.receiveShadow = true;
         this.actors.add(mesh); this.instances.push({ mesh, foods, local: child.matrixWorld.clone() });
       });
     }
   }
+  /** Dynamic resolution: `ms` is the time since the last frame. Each second, a slow average (under about 45 frames a second) lowers the
+   *  pixel ratio by .1, and a fast one (over about 70) raises it by .05, between minPixelRatio and maxPixelRatio. */
+  adaptResolution(ms: number) {
+    if (!(ms > 0 && ms < 250)) return;
+    this.frameMs += (ms - this.frameMs) * .05; this.resolutionClock += ms;
+    if (this.resolutionClock < 1000) return;
+    this.resolutionClock = 0;
+    const next = this.frameMs > 22 ? Math.max(this.minPixelRatio, this.pixelRatio - .1) : this.frameMs < 14 ? Math.min(this.maxPixelRatio, this.pixelRatio + .05) : this.pixelRatio;
+    if (Math.abs(next - this.pixelRatio) < 1e-3) return;
+    this.pixelRatio = next; this.renderer.setPixelRatio(next); this.renderer.setSize(this.width, this.height);
+  }
+  get resolution() { return { pixelRatio: this.pixelRatio, frameMs: this.frameMs, lowPower: this.lowPower }; }
   resize() { this.width = innerWidth; this.height = innerHeight; this.renderer.setSize(this.width, this.height); this.camera.aspect = this.width / this.height; this.camera.updateProjectionMatrix(); }
   get surface() { return WATER_LEVEL / this.scale; }
   groundAt(x: number, z: number) { return seabedHeight(x * this.scale, z * this.scale) / this.scale; }
@@ -470,13 +503,15 @@ export class TideWorld {
     this.surfaceMesh.visible = this.spaceMix < .995; this.scenery.visible = this.spaceMix < .995; this.sunSphere.visible = this.spaceMix < .9;
     for (const r of this.seabedRings) r.mesh.visible = seabedRingVisible(r.ring, this.scale);
     this.seabedCoarse.visible = seabedCoarseVisible(this.scale);
+    this.islandGround.visible = seabedRingVisible(SEABED_RINGS[0]!, this.scale) || seabedCoarseVisible(this.scale);
     (this.stars.material as T.PointsMaterial).opacity = this.spaceMix; this.stars.position.copy(p);
     this.bubbles.rotation.y = Math.sin(time * .015) * .04;
-    for (const lod of this.lods) {
+    this.lods.forEach((lod, i) => {
       lod.group.visible = reefLayerVisible(lod.layer, this.scale);
-      const shadow = this.scale / lod.size > .45;
-      lod.group.traverse(object => { if (object instanceof T.Mesh) object.castShadow = shadow; });
-    }
+      // Only when it changes: a traversal of every reef mesh each frame cost time for nothing.
+      const shadow = !this.lowPower && this.scale / lod.size > .45;
+      if (this.reefShadow[i] !== shadow) { this.reefShadow[i] = shadow; lod.group.traverse(object => { if (object instanceof T.Mesh) object.castShadow = shadow; }); }
+    });
     // The menu keeps the ecosystem moving in the background with its ambient motion.
     if (menu && dt > 0) this.eco.step({ stage: this.stage, dt, now: time, player: { x: 1e7, y: 0, z: 1e7 }, playerHull: [], perceivable: false, stealthFactor: 1, unlocked: [] });   // the menu: no run is playing (an empty list on purpose)
     this.syncFoods();
@@ -489,7 +524,7 @@ export class TideWorld {
       // Angry creatures puff up a little so the player can see the danger.
       const angry = e.mode === 'hunt' || e.mode === 'angry';
       f.model.scale.setScalar(size * (f === this.homePlanet ? 1.35 : 1) * (angry ? 1.12 + Math.sin(time * 9) * .04 : 1));
-      const distance = p.distanceTo(new T.Vector3(f.data.x, f.data.y, f.data.z));
+      const distance = Math.hypot(p.x - f.data.x, p.y - f.data.y, p.z - f.data.z);   // no Vector3 per food per frame
       f.model.visible = size / this.scale > .07 && distance < 230 + size / this.scale * 2 && !(f.tier < 4 && this.spaceMix > .99);
       if (f === this.homePlanet) f.model.visible = f.model.visible && this.spaceMix > .001;
       const cue = this.cues.get(e.id);
@@ -517,7 +552,8 @@ export class TideWorld {
     for (const set of this.instances) {
       // Future giants remain visible without casting an ocean-sized shadow
       // across the tiny player's entire habitat.
-      set.mesh.castShadow = set.foods[0]!.tier <= this.stage;
+      // A phone (lowPower) draws no food shadows: one instanced set spans the whole world, so the shadow map would draw all of it.
+      set.mesh.castShadow = !this.lowPower && set.foods[0]!.tier <= this.stage;
       let count = 0;
       for (const food of set.foods) {
         const model = food.model;
@@ -528,6 +564,8 @@ export class TideWorld {
         set.mesh.setMatrixAt(count++, this.instanceMatrix);
       }
       set.mesh.count = count; set.mesh.visible = count > 0; set.mesh.instanceMatrix.needsUpdate = true; if (set.mesh.instanceColor) set.mesh.instanceColor.needsUpdate = true;
+      // The bounds of the drawn instances, so the camera and the shadow map skip a set that is out of their view.
+      if (count > 0) set.mesh.computeBoundingSphere();
     }
     for (const q of this.impacts) {
       if (!q.mesh.visible) continue;

@@ -144,9 +144,10 @@ describe('grown Breach landings (owner playtest P3)', () => {
   const arcs = (id: 'darter' | 'bulk', growth: number, wy: number, count: number) => {
     const p0 = plan(id)!, g = starterFor(p0), stage = 2, size = SIZES[stage]!, actor = playerActor(p0, g, stage, growth), L = actor.bodyLength;
     const t = makeTerrain(stage), queries = makeWorldQueries(t), bounds = { half: 50 * size }, caps = movementCapabilities(p0);
-    const top = STAGES[stage]!.speed * derive(effectiveStats(g, p0)).speedFactor, rt = newRuntime({ yaw: Math.PI / 2, pitch: 0 });
-    const wish = { x: Math.sqrt(1 - wy * wy), y: wy, z: 0 };
-    let p: Vec3 = { x: -30 * size, y: WATER_LEVEL - .8 * L, z: 0 }, started = 0, recoveries = 0, refused = 0, held = false;
+    const top = STAGES[stage]!.speed * derive(effectiveStats(g, p0)).speedFactor, rt = newRuntime({ yaw: -Math.PI / 2, pitch: 0 });
+    // Toward −x, open sea (the coast's continent is toward +x).
+    const wish = { x: -Math.sqrt(1 - wy * wy), y: wy, z: 0 };
+    let p: Vec3 = { x: 22 * size, y: WATER_LEVEL - .8 * L, z: 0 }, started = 0, recoveries = 0, refused = 0, held = false;
     expect(queries.overlapHull(actor, p, rt.orientation, { time: 0, bounds }).ok, 'start pose').toBe(true);
     for (let f = 0; started < count || rt.arc !== null || rt.permit !== null; f++) {
       const now = f / 60, wantArc = started < count && rt.arc === null && rt.permit === null && now >= rt.breachReadyAt;

@@ -18,6 +18,8 @@ export const BREACH_REACH = 2;
 export const BREACH_CLEARANCE = .02;
 export const PITCH_LIMIT = 1.2;
 const FACING_MIN = .05, BREACH_PITCH_STEP = .05;
+/** A flyer within this many body lengths over dry land stops sinking (the coast). */
+export const LAND_HOVER = .3;
 
 /** The height a Breach arc ends at: BREACH_END_DEPTH × size under the surface, or deeper, so that the hull top at every pitch
  *  the body can turn to during the arc (|pitch| ≤ PITCH_LIMIT) is at least BREACH_CLEARANCE × L under the surface. Then the
@@ -86,6 +88,12 @@ export function stepPlayer(position: Vec3, rt: CombatRuntime, intent: CombatInpu
   const w: MutVec3 = { x: ctx.wish.x, y: caps.pitch ? ctx.wish.y : 0, z: ctx.wish.z };
   if (caps.rise && arc === null) { if (intent.traversal === 'rise' || intent.traversal === 'breach') w.y += 1; else if (intent.traversal === 'dive') w.y -= 1; }
   if (caps.ground) w.y = 0;
+  // A flyer close over dry land (the coast) does not press down into it: it flies level and the ground step carries it over the land.
+  // Diving nose-first into a slope held it in place.
+  if (profile.mode === 'fly' && w.y < 0 && !ctx.queries.terrain.space) {
+    const t = ctx.queries.terrain, g = t.groundAt(position.x, position.z);
+    if (g >= t.surface && position.y - hullExtents(ctx.actor, rt.orientation).bottom - g < LAND_HOVER * ctx.actor.bodyLength) w.y = 0;
+  }
   const wLen = Math.hypot(w.x, w.y, w.z);
   if (wLen > 1) { w.x /= wLen; w.y /= wLen; w.z /= wLen; }
 
@@ -116,7 +124,9 @@ export function stepPlayer(position: Vec3, rt: CombatRuntime, intent: CombatInpu
   if (f) {
     const fLen = Math.hypot(f.x, f.y, f.z);
     if (Math.hypot(f.x, f.z) > FACING_MIN) yawTarget = Math.atan2(f.x, f.z);
-    if (caps.pitch && fLen > 0) pitchTarget = clampAbs(Math.asin(clampAbs(f.y / fLen, 1)), PITCH_LIMIT);
+    // A flyer that only rises or sinks stays level (the coast): nose-down, a long flyer touched the land with its nose and could not
+    // come low enough to bite land food.
+    if (caps.pitch && fLen > 0) pitchTarget = profile.mode === 'fly' && Math.hypot(f.x, f.z) <= FACING_MIN ? 0 : clampAbs(Math.asin(clampAbs(f.y / fLen, 1)), PITCH_LIMIT);
   }
   // Fix round 3: after a refused large turn, turn the other way round toward the same target (cleared when the target moves or is reached).
   let turnArc = shortestArc(o.yaw, yawTarget);

@@ -105,6 +105,7 @@ export function findEncounters(planId: string, hunterKey: string, count: number,
 }
 
 /** The x (stage-local units) of an edge encounter's start: inside the soft start (40), so the flight goes into the edge current. */
+/** The player's x is −EDGE_ENCOUNTER_X: the −x edge is open sea at every size (the coast's continent is toward +x, coast.ts). */
 export const EDGE_ENCOUNTER_X = 38;
 /** Fixture construction (final review M11): the player stands at x = EDGE_ENCOUNTER_X, facing +x, and the first hunter of `hunterKey`
  *  in the seed is moved .95 of its notice distance further in (−x), on the same z. Fleeing straight away from it runs into the push
@@ -114,13 +115,13 @@ export function edgeEncounter(planId: string, hunterKey: string, seed: number): 
   const eco = new Ecosystem(seed), h = eco.entities.find(e => e.spec.key === hunterKey && !e.eaten);
   if (!h) return null;
   const n = noticeRadius(h, stage, pl.stealth), hunterActor = speciesActor(h), tier = h.spec.tier, hunterLegal = { queries: stageWorldQueries(tier, seed), bounds: { half: WORLD_HALF * SIZES[tier]! } };
-  const o: Orientation = { yaw: Math.PI / 2, pitch: 0 };
+  const o: Orientation = { yaw: -Math.PI / 2, pitch: 0 };
   for (const z of [0, 6, -6, 12, -12, 18, -18]) {
-    const x = EDGE_ENCOUNTER_X * size, near: Vec3 = { x, y: t.groundAt(x, z * size) + L, z: z * size };
+    const x = -EDGE_ENCOUNTER_X * size, near: Vec3 = { x, y: t.groundAt(x, z * size) + L, z: z * size };
     const rec = findRecoveryPose(pl.actor, near, { ...legal, orientation: o, time: 0 }, { maxDistance: 2 * L });
     if (!rec.ok || !insideSoftEdge(pl.actor, rec.position, legal.bounds.half)) continue;
     // A ground hunter keeps its height over the seabed; any other comes level with the player.
-    const start = rec.position, hx = start.x - .95 * n, hz = start.z, hy = movement(h.spec.movementProfileId).mode === 'ground' ? t.groundAt(hx, hz) + h.y - t.groundAt(h.x, h.z) : start.y;
+    const start = rec.position, hx = start.x + .95 * n, hz = start.z, hy = movement(h.spec.movementProfileId).mode === 'ground' ? t.groundAt(hx, hz) + h.y - t.groundAt(h.x, h.z) : start.y;
     const hrec = findRecoveryPose(hunterActor, { x: hx, y: hy, z: hz }, { ...hunterLegal, orientation: { yaw: 0, pitch: 0 }, time: 0 }, { maxDistance: 2 * hunterActor.bodyLength });
     if (!hrec.ok) continue;
     const hunter = hrec.position;

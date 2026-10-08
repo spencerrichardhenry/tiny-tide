@@ -9,7 +9,8 @@
 // COARSE_SCALE they are hidden and one coarse ring (spacing 24, the stage-3 spacing) covers the same area, with the reef's boundary
 // as its first loop and ring 2's first loop as its last, so it joins both without cracks.
 import * as T from 'three';
-import { PLAYER_HALF, seabedHeight } from './biomes';
+import { PLAYER_HALF, seabedHeight, WATER_LEVEL } from './biomes';
+import { ISLAND, ISLAND_RADIUS, islandLift } from './coast';
 import { EDGE_FADE_END } from './edge';
 
 export interface SeabedRing { from: number; to: number; spacing: number }
@@ -49,12 +50,18 @@ function loops(index: number): { radius: number; segments: number }[] {
   return loopsOf(SEABED_RINGS[index]!, first);
 }
 
-const LIGHT = new T.Color('#d6d2ad'), DEEP = new T.Color('#65a1a2'), scratch = new T.Color();
-/** The vertex colour of the Blender seabed (build_assets.py make_terrain), in linear space. */
-function seabedColor(x: number, z: number, out: T.Color): T.Color {
+const LIGHT = new T.Color('#d6d2ad'), DEEP = new T.Color('#65a1a2'), SAND = new T.Color('#f0dfae'), GRASS = new T.Color('#7fae5a'), scratch = new T.Color();
+/** The vertex colour of the Blender seabed (build_assets.py make_terrain), in linear space. The coast's land (coast.ts) is light
+ *  sand from just under the waterline and turns to grass from 3 to 12 units above it. */
+function seabedColor(x: number, z: number, out: T.Color, y = seabedHeight(x, z)): T.Color {
   const t = Math.max(0, Math.min(1, (Math.abs(x) + Math.abs(z)) / 650 + Math.sin(x * .08) * .09)), ripple = .96 + .04 * Math.sin(x * 3.7 + Math.sin(z * .7));
-  return out.copy(LIGHT).lerp(DEEP, t).multiplyScalar(ripple);
+  out.copy(LIGHT).lerp(DEEP, t);
+  if (y > WATER_LEVEL - 8) out.lerp(SAND, Math.min(1, (y - WATER_LEVEL + 8) / 6));
+  if (y > WATER_LEVEL + 3) out.lerp(GRASS, Math.min(1, (y - WATER_LEVEL - 3) / 9));
+  return out.multiplyScalar(ripple);
 }
+/** The ground the rings draw: the collision ground without the island, which has its own fine mesh on top (islandGeometry). */
+export const ringHeight = (x: number, z: number) => seabedHeight(x, z) - islandLift(x, z);
 
 /** The geometry of ring `index`: positions on seabedHeight, its normals and colours, and triangles that face up. */
 export const seabedRingGeometry = (index: number): T.BufferGeometry => loopGeometry(loops(index));
@@ -68,9 +75,9 @@ function loopGeometry(ls: { radius: number; segments: number }[]): T.BufferGeome
     starts.push(v);
     for (let side = 0; side < 4; side++) for (let i = 0; i < n; i++) {
       // The same expression as the Blender mesh ((u − .5) × 2r), so the first loop repeats the reef's boundary points.
-      const a = (i / n - .5) * 2 * r, x = [a, r, -a, -r][side]!, z = [-r, a, r, -a][side]!, y = seabedHeight(x, z);
-      const gx = (seabedHeight(x + .5, z) - seabedHeight(x - .5, z)), gz = (seabedHeight(x, z + .5) - seabedHeight(x, z - .5)), k = 1 / Math.hypot(gx, 1, gz);
-      seabedColor(x, z, scratch);
+      const a = (i / n - .5) * 2 * r, x = [a, r, -a, -r][side]!, z = [-r, a, r, -a][side]!, y = ringHeight(x, z);
+      const gx = (ringHeight(x + .5, z) - ringHeight(x - .5, z)), gz = (ringHeight(x, z + .5) - ringHeight(x, z - .5)), k = 1 / Math.hypot(gx, 1, gz);
+      seabedColor(x, z, scratch, y);
       position[3 * v] = x; position[3 * v + 1] = y; position[3 * v + 2] = z;
       normal[3 * v] = -gx * k; normal[3 * v + 1] = k; normal[3 * v + 2] = -gz * k;
       color[3 * v] = scratch.r; color[3 * v + 1] = scratch.g; color[3 * v + 2] = scratch.b;
@@ -98,5 +105,32 @@ function loopGeometry(ls: { radius: number; segments: number }[]): T.BufferGeome
   const g = new T.BufferGeometry();
   g.setAttribute('position', new T.BufferAttribute(position, 3)); g.setAttribute('normal', new T.BufferAttribute(normal, 3)); g.setAttribute('color', new T.BufferAttribute(color, 3));
   g.setIndex(new T.BufferAttribute(new Uint32Array(index3), 1)); g.computeBoundingSphere();
+  return g;
+}
+
+/** The island (coast.ts): a polar grid out to just past its radius, sampled from the collision ground, drawn over the rings (which
+ *  leave the island out, ringHeight) with a polygon offset. Radial steps of 1.25 and 192 spokes keep it within .02 L at every size;
+ *  its rim is where the island's lift is zero, so it meets the rings' surface. */
+export const ISLAND_SPOKES = 192, ISLAND_STEP = 1.25;
+export function islandGeometry(): T.BufferGeometry {
+  const rings = Math.ceil((ISLAND_RADIUS + 2) / ISLAND_STEP), n = ISLAND_SPOKES, count = 1 + rings * n;
+  const position = new Float32Array(3 * count), normal = new Float32Array(3 * count), color = new Float32Array(3 * count);
+  const put = (v: number, x: number, z: number) => {
+    const y = seabedHeight(x, z), gx = seabedHeight(x + .25, z) - seabedHeight(x - .25, z), gz = seabedHeight(x, z + .25) - seabedHeight(x, z - .25), k = 1 / Math.hypot(gx * 2, 1, gz * 2);
+    seabedColor(x, z, scratch, y);
+    position[3 * v] = x; position[3 * v + 1] = y; position[3 * v + 2] = z;
+    normal[3 * v] = -gx * 2 * k; normal[3 * v + 1] = k; normal[3 * v + 2] = -gz * 2 * k;
+    color[3 * v] = scratch.r; color[3 * v + 1] = scratch.g; color[3 * v + 2] = scratch.b;
+  };
+  put(0, ISLAND.x, ISLAND.z);
+  for (let j = 1; j <= rings; j++) for (let i = 0; i < n; i++) { const a = i / n * 2 * Math.PI, r = j * ISLAND_STEP; put(1 + (j - 1) * n + i, ISLAND.x + Math.cos(a) * r, ISLAND.z + Math.sin(a) * r); }
+  const index: number[] = [], at = (j: number, i: number) => j === 0 ? 0 : 1 + (j - 1) * n + (i % n);
+  // Counter-clockwise seen from above (+y): with x = cos a, z = sin a, the angle grows clockwise from above, so each triangle goes
+  // outward, then back in angle.
+  for (let i = 0; i < n; i++) index.push(0, at(1, i + 1), at(1, i));
+  for (let j = 1; j < rings; j++) for (let i = 0; i < n; i++) index.push(at(j, i), at(j, i + 1), at(j + 1, i), at(j, i + 1), at(j + 1, i + 1), at(j + 1, i));
+  const g = new T.BufferGeometry();
+  g.setAttribute('position', new T.BufferAttribute(position, 3)); g.setAttribute('normal', new T.BufferAttribute(normal, 3)); g.setAttribute('color', new T.BufferAttribute(color, 3));
+  g.setIndex(new T.BufferAttribute(new Uint32Array(index), 1)); g.computeBoundingSphere();
   return g;
 }

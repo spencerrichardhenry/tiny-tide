@@ -6,6 +6,7 @@
 import { PLAYER_HALF, seabedHeight, SIZES, WATER_LEVEL } from './biomes';
 import type { Actor, Admission, AdmissionContext, Capsule, Constraint, EnvironmentSample, MutVec3, Orientation, Terrain, Vec3, WorldQueries } from './combat-types';
 import { orientedHeave, orientedSway, rotateInto } from './orientation';
+import { coastBounds, ISLAND } from './coast';
 import { LAND_BAND } from './profiles';
 import { stageSolids } from './reef';
 import { newContact, type SolidIndex } from './solids';
@@ -16,8 +17,20 @@ export const SEABED_SLOPE_BOUND = .63;
  *  A(a² + b²), and 4.5 sin((x + z)c) has 2 × 4.5c². 2.4 × (.075² + .055²) + 9 × .018² + 13 × (.006² + .009²) = .0252, rounded up. */
 export const SEABED_CURVATURE_BOUND = .026;
 
+/** The coast's bounds (coast.ts) are added only near its lifts, so the open sea keeps the seabed's bounds. */
+const COAST_BOUNDS = coastBounds(ISLAND.x, ISLAND.z, 1e5, { slope: 0, curvature: 0 });
+export const TERRAIN_SLOPE_BOUND = SEABED_SLOPE_BOUND + COAST_BOUNDS.slope, TERRAIN_CURVATURE_BOUND = SEABED_CURVATURE_BOUND + COAST_BOUNDS.curvature;
+function seabedBoundsAt(x: number, z: number, reach: number, out: { slope: number; curvature: number }) {
+  coastBounds(x, z, reach, out); out.slope += SEABED_SLOPE_BOUND; out.curvature += SEABED_CURVATURE_BOUND; return out;
+}
 export function makeTerrain(stage: number): Terrain {
-  return { groundAt: seabedHeight, surface: WATER_LEVEL, space: stage === 4, slopeBound: SEABED_SLOPE_BOUND, curvatureBound: SEABED_CURVATURE_BOUND };
+  return { groundAt: seabedHeight, surface: WATER_LEVEL, space: stage === 4, slopeBound: TERRAIN_SLOPE_BOUND, curvatureBound: TERRAIN_CURVATURE_BOUND, boundsAt: seabedBoundsAt };
+}
+/** The slope and curvature bounds a scan around (x, z) with this reach may use. */
+const localBounds = { slope: 0, curvature: 0 };
+function boundsNear(t: Terrain, x: number, z: number, reach: number): { slope: number; curvature: number } {
+  if (t.boundsAt) return t.boundsAt(x, z, reach, localBounds);
+  localBounds.slope = t.slopeBound; localBounds.curvature = t.curvatureBound ?? 0; return localBounds;
 }
 
 export interface WorldExtras {
@@ -164,7 +177,7 @@ export const TIGHT_GRID = 6;
  *  depth at e = d − h/√2 − w (a first-order bound for the whole cell of each point). Tight: see scanGridTight. */
 function scanGrid(t: Terrain, cx: number, cz: number, rp: number, w: number, base: number, tight = false, clearOk = false, prune = clearOk): void {
   if (tight && scanGridTight(t, cx, cz, rp, w, base, clearOk, prune)) return;
-  const h = rp / 2, diag = h * Math.SQRT1_2, m = t.slopeBound * diag, reach = rp + w + diag;
+  const h = rp / 2, diag = h * Math.SQRT1_2, reach = rp + w + diag, m = boundsNear(t, cx, cz, reach).slope * diag;
   scan.short = -Infinity; scan.gmin = Infinity; scan.gmax = -Infinity;
   const N = h > 0 ? Math.floor(reach / h + 1e-9) : 0, lim = reach * (1 + 1e-12) + 1e-12;
   for (let i = -N; i <= N; i++) for (let j = -N; j <= N; j++) {
@@ -190,9 +203,9 @@ function scanGrid(t: Terrain, cx: number, cz: number, rp: number, w: number, bas
  *  `clearOk`: a sphere that is clear by the slope bound alone (ground(c) + S(r' + w) + m + r' ≤ base) skips the grid; its footprint
  *  bounds are then ground(c) ∓ (S(r' + w) + m). The caller allows it only where those looser bounds cannot change a media rule. */
 function scanGridTight(t: Terrain, cx: number, cz: number, rp: number, w: number, base: number, clearOk: boolean, prune = clearOk): boolean {
-  const h = rp / TIGHT_GRID, diag = h * Math.SQRT1_2, S = t.slopeBound, eMax = rp * S / Math.sqrt(1 + S * S) + diag;
+  const local = boundsNear(t, cx, cz, rp + w), h = rp / TIGHT_GRID, diag = h * Math.SQRT1_2, S = local.slope, eMax = rp * S / Math.sqrt(1 + S * S) + diag;
   if (eMax >= .9 * rp) return false;
-  const K = t.curvatureBound ?? 0, kappa = rp * rp / Math.pow(rp * rp - eMax * eMax, 1.5) + K, m = kappa * diag * diag / 2, reach = rp + w;
+  const K = t.curvatureBound === undefined ? 0 : local.curvature, kappa = rp * rp / Math.pow(rp * rp - eMax * eMax, 1.5) + K, m = kappa * diag * diag / 2, reach = rp + w;
   if (clearOk) {
     const g0 = t.groundAt(cx, cz), spread = S * reach + m;
     if (g0 + spread + rp - base <= 0) { scan.short = g0 + spread + rp - base; scan.gx = cx; scan.gz = cz; scan.gy = g0; scan.gmin = g0 - spread; scan.gmax = g0 + spread; return true; }
@@ -331,6 +344,9 @@ export function admit(actor: Actor, at: Vec3, o: Orientation, ctx: AdmissionCont
   const water = media.includes('water') || !!pm?.includes('water'), air = media.includes('air') || !!pm?.includes('air'), land = media.includes('land') || !!pm?.includes('land'),
     space = media.includes('space') || !!pm?.includes('space');
   const maxDepth = hab.maxWaterDepthBodyLengths, maxGap = hab.maxFloorGapBodyLengths, band = hab.surfaceBandBodyLengths, wading = hab.wadingSupportBodyLengths;
+  // The body's lowest point (spec §3 "lowest point within .6 L"): a walker standing on land has its upper body in the air too.
+  let bottom = Infinity;
+  for (let s = 0; s < count; s++) { const i = s * STRIDE; bottom = Math.min(bottom, at.y + spheres[i + 1]! - spheres[i + 3]! - spheres[i + 5]!); }
   for (let s = 0; s < count; s++) {
     const i = s * STRIDE, cx = at.x + spheres[i]!, cy = at.y + spheres[i + 1]!, cz = at.z + spheres[i + 2]!;
     const rp = spheres[i + 3]!, w = spheres[i + 4]!, v = spheres[i + 5]!, gmin = spheres[i + 6]!, gmax = spheres[i + 7]!;
@@ -349,7 +365,7 @@ export function admit(actor: Actor, at: Vec3, o: Orientation, ctx: AdmissionCont
         if (!ok) return fail('surface-top', vec(px, py, pz), { x: 0, y: -1, z: 0 });
       }
       if (gmax >= t.surface) {
-        if (py - gmin <= LAND_BAND * L) {
+        if (bottom - gmin <= LAND_BAND * L) {
           const ok = air || (land && Math.acos(Math.min(1, terrainNormal(t, px, pz).y)) <= hab.maxLandSlopeRadians);
           if (!ok) return fail('land-band', vec(px, py, pz), unit(-gradX(t, px, pz), 0, -gradZ(t, px, pz)));
         } else if (!air) return fail('air', vec(px, py, pz), unit(gradX(t, px, pz), -1, gradZ(t, px, pz)));

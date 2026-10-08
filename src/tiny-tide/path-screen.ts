@@ -62,7 +62,7 @@ export function openPathScreen(o: PathScreenOptions): Promise<string | null> {
     root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'path-title');
     const title = o.choices.length === 1 ? 'Next form' : 'Choose your path';
     root.innerHTML = `<div class="path-inner"><h2 id="path-title">${title}</h2>
-      <p class="path-lede">Choose your diet now: you can change your mouth while you evolve.</p>
+      <p class="path-lede">Each form starts from a fresh body: your parts come off and their DNA comes back. Choose your diet now: you can change your mouth while you evolve.</p>
       <div class="path-cards">${o.choices.map(c => card(o, c)).join('')}</div>
       <button class="path-later text-button">Not yet</button></div>`;
     document.querySelector('#app')!.append(root);

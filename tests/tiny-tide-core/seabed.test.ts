@@ -7,7 +7,8 @@ import { PLAYER_HALF, SIZES, seabedHeight } from '../../src/tiny-tide/biomes';
 import { starterFor } from '../../src/tiny-tide/genome';
 import { bodyLengthOf } from '../../src/tiny-tide/mount';
 import { PLANS } from '../../src/tiny-tide/plans';
-import { SEABED_COARSE_RING, SEABED_INNER_HALF, SEABED_INNER_SEGMENTS, SEABED_RINGS, SEABED_VISIBLE, seabedCoarseGeometry, seabedCoarseVisible, seabedRingGeometry, seabedRingVisible } from '../../src/tiny-tide/seabed-mesh';
+import { ISLAND, ISLAND_RADIUS, islandLift } from '../../src/tiny-tide/coast';
+import { islandGeometry, ringHeight, SEABED_COARSE_RING, SEABED_INNER_HALF, SEABED_INNER_SEGMENTS, SEABED_RINGS, SEABED_VISIBLE, seabedCoarseGeometry, seabedCoarseVisible, seabedRingGeometry, seabedRingVisible } from '../../src/tiny-tide/seabed-mesh';
 
 interface Mesh { positions: ArrayLike<number>; index: ArrayLike<number> }
 /** POSITION and indices of every primitive of a GLB (no node transforms: the seabed GLBs have none). */
@@ -24,28 +25,31 @@ function readGlb(path: string): Mesh[] {
   return out;
 }
 
-/** The largest |drawn height − seabedHeight| at 15 points per triangle, inside the Chebyshev radius `reach`. */
+/** The largest |drawn height − seabedHeight| at 15 points per triangle, inside the Chebyshev radius `reach`. The rings leave the island
+ *  out (ringHeight); the island mesh is drawn over them, so a ring point where the island lifts the ground is not the top surface. */
 function maxError(meshes: readonly Mesh[], reach: number): number {
   let worst = 0;
-  for (const { positions: p, index } of meshes) for (let t = 0; t < index.length; t += 3) {
+  for (const m of meshes) for (let t = 0; t < m.index.length; t += 3) {
+    const { positions: p, index } = m, covered = m !== island;
     const a = 3 * index[t]!, b = 3 * index[t + 1]!, c = 3 * index[t + 2]!;
     if (Math.min(Math.max(Math.abs(p[a]!), Math.abs(p[a + 2]!)), Math.max(Math.abs(p[b]!), Math.abs(p[b + 2]!)), Math.max(Math.abs(p[c]!), Math.abs(p[c + 2]!))) > reach) continue;
     for (let i = 0; i <= 4; i++) for (let j = 0; j <= 4 - i; j++) {
       const u = i / 4, v = j / 4, w = 1 - u - v;
       const x = p[a]! * u + p[b]! * v + p[c]! * w, z = p[a + 2]! * u + p[b + 2]! * v + p[c + 2]! * w;
-      if (Math.max(Math.abs(x), Math.abs(z)) > reach) continue;
+      if (Math.max(Math.abs(x), Math.abs(z)) > reach || (covered && islandLift(x, z) > 0)) continue;
       worst = Math.max(worst, Math.abs(p[a + 1]! * u + p[b + 1]! * v + p[c + 1]! * w - seabedHeight(x, z)));
     }
   }
   return worst;
 }
 
+const islandMesh = islandGeometry(), island: Mesh = { positions: islandMesh.getAttribute('position').array, index: islandMesh.getIndex()!.array };
 describe('the drawn seabed (owner playtest P3)', () => {
   const inner = readGlb('public/tiny-tide/models/seabed_0.glb');
   const rings = SEABED_RINGS.map((r, i) => { const g = seabedRingGeometry(i); return { ring: r, mesh: { positions: g.getAttribute('position').array, index: g.getIndex()!.array } }; });
   const coarseGeometry = seabedCoarseGeometry(), coarse = { positions: coarseGeometry.getAttribute('position').array, index: coarseGeometry.getIndex()!.array };
   /** The meshes drawn at a world scale: the reef, the visible rings and the coarse ring when it shows. */
-  const shownAt = (scale: number) => [inner[0]!, ...rings.filter(r => seabedRingVisible(r.ring, scale)).map(r => r.mesh), ...(seabedCoarseVisible(scale) ? [coarse] : [])];
+  const shownAt = (scale: number) => [inner[0]!, island, ...rings.filter(r => seabedRingVisible(r.ring, scale)).map(r => r.mesh), ...(seabedCoarseVisible(scale) ? [coarse] : [])];
   for (let stage = 0; stage < 4; stage++) {
     // The smallest starter body length of the stage's plans, at growth 1 (the strictest L).
     const L = Math.min(...PLANS.filter(p => p.size === stage).map(p => bodyLengthOf(starterFor(p)))) * SIZES[stage]!, reach = PLAYER_HALF * SIZES[stage]!;
@@ -77,7 +81,7 @@ describe('the drawn seabed (owner playtest P3)', () => {
     const tris = (scale: number) => shownAt(scale).reduce((n, m) => n + m.index.length / 3, 0), scale = SIZES[3]!;
     for (const r of SEABED_RINGS) if (seabedRingVisible(r, scale)) expect(r.spacing / scale, `ring from ${r.from}`).toBeGreaterThanOrEqual(.25);
     if (seabedCoarseVisible(scale)) expect(SEABED_COARSE_RING.spacing / scale).toBeGreaterThanOrEqual(.25);
-    const all = [inner[0]!, ...rings.filter(r => r.ring.from < SEABED_VISIBLE * scale).map(r => r.mesh)].reduce((n, m) => n + m.index.length / 3, 0);
+    const all = [inner[0]!, island, ...rings.filter(r => r.ring.from < SEABED_VISIBLE * scale).map(r => r.mesh)].reduce((n, m) => n + m.index.length / 3, 0);
     console.log(`stage 3 seabed triangles: ${all} with the fine rings, ${tris(scale)} now`);
     expect(tris(scale)).toBeLessThan(.65 * all);   // 291 580 → 178 052: ring 2 (the stage-3 reach, spacing 24) stays
     // Stages 0–2 draw exactly what they drew before.
@@ -93,8 +97,16 @@ describe('the drawn seabed (owner playtest P3)', () => {
     const first = loopAt(coarse.positions, SEABED_INNER_HALF);
     expect(first.size).toBe(4 * SEABED_INNER_SEGMENTS); for (const v of first) expect(reef.has(v)).toBe(true);
   });
+  it('draws the island over the rings: its rim is past the island, where the rings draw the ground itself (coast)', () => {
+    const p = island.positions;
+    let rim = 0; for (let k = 0; k < p.length; k += 3) rim = Math.max(rim, Math.hypot(p[k]! - ISLAND.x, p[k + 2]! - ISLAND.z));
+    expect(rim).toBeGreaterThan(ISLAND_RADIUS + 1);
+    for (let k = 0; k < p.length; k += 3) expect(p[k + 1]!).toBeGreaterThanOrEqual(ringHeight(p[k]!, p[k + 2]!) - 1e-3);
+    // Outside the island the rings draw exactly the collision ground.
+    for (const [x, z] of [[0, 0], [150, 40], [-130, 60], [600, -300]]) expect(ringHeight(x!, z!)).toBe(seabedHeight(x!, z!));
+  });
   it('faces every triangle up', () => {
-    for (const { positions: p, index } of [...rings.map(r => r.mesh), coarse]) for (let t = 0; t < index.length; t += 3) {
+    for (const { positions: p, index } of [...rings.map(r => r.mesh), coarse, island]) for (let t = 0; t < index.length; t += 3) {
       const a = 3 * index[t]!, b = 3 * index[t + 1]!, c = 3 * index[t + 2]!;
       const ux = p[b]! - p[a]!, uz = p[b + 2]! - p[a + 2]!, vx = p[c]! - p[a]!, vz = p[c + 2]! - p[a + 2]!;
       expect(uz * vx - ux * vz).toBeGreaterThan(0);   // the y part of (b − a) × (c − a)
