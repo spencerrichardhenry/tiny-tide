@@ -12,6 +12,8 @@ const habitatRows: HabitatRow[] = [
   ['space', ['space'], null, null, 0, null, null], ['sp-seabed', ['water'], null, 1.6, .9, null, null], ['sp-water', ['water'], null, null, .9, null, null],
   ['sp-air', ['air'], null, null, .9, null, null], ['sp-surface', ['water'], null, null, .9, .6, null], ['sp-prop', ['land'], null, null, 1.5, null, null, true],
   ['sp-space', ['space'], null, null, 0, null, null],
+  // Land walkers of the coast (the hill tortoise).
+  ['sp-land', ['land'], null, null, 1, null, null],
 ];
 export const HABITATS: Record<string, HabitatProfile> = Object.fromEntries(habitatRows.map(r => [r[0], habitatRow(r)]));
 

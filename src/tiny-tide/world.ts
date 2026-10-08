@@ -4,6 +4,7 @@ import { biomeAt, followDistance, followScaleStep, followScaleTarget, PLAYER_HAL
 import { REEF_LAYERS, reefLayer, reefLayerVisible } from './reef';
 import { EDGE_FADE_END, EDGE_SOFT_START } from './edge';
 import { CreatureModel } from './creature';
+import { landMeshes, placeLand } from './land';
 import { islandGeometry, SEABED_RINGS, seabedCoarseGeometry, seabedCoarseVisible, seabedRingGeometry, seabedRingVisible, type SeabedRing } from './seabed-mesh';
 import { Ecosystem, type Entity } from './ecosystem';
 import type { Vec3 } from './combat-types';
@@ -125,6 +126,9 @@ export class TideWorld {
   private toScale = 1;
   private previousCreature: CreatureModel | null = null;
   private reef = new T.Group();
+  /** The continent's scenery (land.ts): forests, villages and boulders. */
+  private land = new T.Group();
+  private landMaterial = new T.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .85, metalness: 0, side: T.DoubleSide });
   private islands = new T.Group();
   private sceneryMaterialMap = new Map<T.Material, T.Material>();
   private shake = 0;
@@ -209,7 +213,7 @@ export class TideWorld {
     const islandSand = (sand as T.Material).clone(); islandSand.polygonOffset = true; islandSand.polygonOffsetFactor = -1; islandSand.polygonOffsetUnits = -4;
     this.islandGround = ownMesh(islandGeometry(), islandSand, true); this.islandGround.castShadow = false; this.islandGround.receiveShadow = true; this.islandGround.name = 'Island ground';
     this.scenery.add(this.islandGround);
-    this.scenery.add(this.reef, this.islands);
+    this.scenery.add(this.reef, this.islands, this.land);
     this.caustics = new T.ShaderMaterial({ uniforms: { time: { value: 0 }, fade: { value: 1 } }, transparent: true, depthWrite: false,
       vertexShader: 'varying vec2 p; void main(){p=position.xz;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
       fragmentShader: 'varying vec2 p;uniform float time;uniform float fade;void main(){vec2 q=p*.9;float a=sin(q.x+sin(q.y*1.4+time*.2)*1.8+time*.15);float b=sin(q.y+sin(q.x*1.2-time*.12)*1.7);float c=pow(1.-abs(a*b),22.);float edge=1.-smoothstep(45.,65.,length(p));gl_FragColor=vec4(.83,1.,.83,c*.15*edge*fade);}' });
@@ -244,7 +248,7 @@ export class TideWorld {
     this.stars = new T.Points(sg, new T.PointsMaterial({ color: '#e4deff', size: .28, transparent: true, opacity: 0, fog: false, depthWrite: false })); this.scene.add(this.stars);
     this.eco = new Ecosystem(71829);
     this.createUniverse();
-    this.buildReef(this.eco.seed);
+    this.buildReef(this.eco.seed); this.buildLand(this.eco.seed);
     this.scenery.traverse(obj => this.fadeable(obj));
     this.build(0, { seed: 71829, eatenPlanets: [] }); this.resize();
   }
@@ -261,6 +265,10 @@ export class TideWorld {
   }
   /** Reef details follow the run's biomes: kelp forests, coral gardens, rocky flats and open sand. The placement is pure and seeded
    *  (reef.ts `placeReef`); the same rocks and arches are the solids of the gameplay queries. */
+  private buildLand(seed: number) {
+    this.land.traverse(o => { if (o instanceof T.Mesh) o.geometry.dispose(); }); this.land.clear();
+    for (const mesh of landMeshes(placeLand(seed), this.landMaterial)) { mesh.castShadow = !this.lowPower; mesh.receiveShadow = true; this.fadeable(mesh); this.land.add(mesh); }
+  }
   private buildReef(seed: number) {
     for (const lod of this.lods) { lod.group.traverse(o => { if (o instanceof T.Mesh) o.geometry.dispose(); }); }
     this.reef.clear(); this.lods = []; this.reefShadow = [];
@@ -350,7 +358,7 @@ export class TideWorld {
   /** Rebuilds the world for a run. A new seed makes a new layout; evolution never rebuilds it. */
   build(stage: number, run: { seed: number; eatenPlanets: readonly number[]; genome?: Genome }) {
     if (run.seed !== this.eco.seed) {
-      this.disposeUniverse(); this.eco = new Ecosystem(run.seed); this.createUniverse(); this.buildReef(run.seed);
+      this.disposeUniverse(); this.eco = new Ecosystem(run.seed); this.createUniverse(); this.buildReef(run.seed); this.buildLand(run.seed);
     }
     this.eco.reset(run.eatenPlanets);
     this.stage = stage; this.followScale = followScaleTarget(stage, this.followOverride); this.scale = SIZES[stage]!; this.toScale = this.scale; this.fromScale = this.scale; this.transitioning = false; this.transitionProgress = 0;
@@ -504,6 +512,7 @@ export class TideWorld {
     for (const r of this.seabedRings) r.mesh.visible = seabedRingVisible(r.ring, this.scale);
     this.seabedCoarse.visible = seabedCoarseVisible(this.scale);
     this.islandGround.visible = seabedRingVisible(SEABED_RINGS[0]!, this.scale) || seabedCoarseVisible(this.scale);
+    this.land.visible = this.scale > 6;   // the continent's scenery: from the Big size (16), where the continent is in view
     (this.stars.material as T.PointsMaterial).opacity = this.spaceMix; this.stars.position.copy(p);
     this.bubbles.rotation.y = Math.sin(time * .015) * .04;
     this.lods.forEach((lod, i) => {

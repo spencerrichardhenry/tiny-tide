@@ -255,6 +255,10 @@ export function findRecoveryPose(actor: Actor, near: Vec3, ctx: LegalityContext 
     if (q.overlapHull(actor, P, o, actx).ok) return ok(P);
   }
   if (opts.anchor && q.overlapHull(actor, opts.anchor, o, actx).ok) return ok(opts.anchor);
+  // The anchor was found level at yaw 0 (startAnchor): a body that fits there only with that heading turns to it (the coast's island
+  // start: a Shore-walker evolving far out at sea with another heading was refused).
+  const level: Orientation = { yaw: 0, pitch: 0 };
+  if (opts.anchor && q.overlapHull(actor, opts.anchor, level, actx).ok) return { ok: true, position: { x: opts.anchor.x, y: opts.anchor.y, z: opts.anchor.z }, orientation: level };
   return { ok: false, reason: NO_POSE };
 }
 

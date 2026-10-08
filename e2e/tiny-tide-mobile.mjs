@@ -3,8 +3,8 @@ import { mkdirSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { GAME, KEYS, frames, makeFixture, openGame, start, writeStorage } from './fixtures/tiny-tide-fixtures.mjs';
 const out = '.codex-drafts/tiny-tide-qa'; mkdirSync(out, {recursive:true});
-/** The most triangles a phone frame may draw at any stage (final review M1). Measured at 390×844: .65M / .93M / 1.08M / .92M at
- *  stages 0–3 with the phone quality (2026-10-07: no reef or food shadows on a coarse pointer; 1.87M at stage 2 before it). */
+/** The most triangles a phone frame may draw at any stage (final review M1). Measured at 390×844: .65M / .94M / 1.16M / 1.0M at
+ *  stages 0–3 with the phone quality and the land scenery (2026-10-08; 1.87M at stage 2 before the phone quality). */
 const PHONE_TRIANGLE_BUDGET = 1_600_000;
 const browser=await chromium.launch({channel:'chrome',headless:true,args:['--enable-unsafe-swiftshader']});
 const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:2,isMobile:true,hasTouch:true});

@@ -100,7 +100,7 @@ the same vertices. Stage 3 draws 178 052 seabed triangles (291 580 before);
 the phone check measured .86M, 1.26M, 1.51M and 1.24M triangles per frame at
 stages 0 to 3 (stage 3 was 1.35M) and asserts a budget of 1.6M. With the coast
 and the phone quality (see "Phone quality" under Verification) it measures .65M,
-.93M, 1.08M and .92M. Measured maximum error: stage 1, .010 L; stage 2, .009 L; stage 3,
+.94M, 1.16M and 1.0M (with the land scenery). Measured maximum error: stage 1, .010 L; stage 2, .009 L; stage 3,
 .016 L. The old Blender rings (`seabed_1`, `seabed_2`) were off by up to .09 L
 at stage 1 and .21 L at stage 2, and did not reach the stage-3 bound. They are
 still in the asset library, but the game no longer loads them.
@@ -130,6 +130,19 @@ island; Dune melons (plant, 18) and Coconut crabs (meat, 12) on the continent at
 size 2; Pine groves (any, 12) on the continent at size 3. Palm trees and
 lighthouses that land on the continent stand on the ground and draw no little
 island of their own.
+
+**More land at size 3 (owner, 2026-10-08: "the continental landmass looks
+quite empty").** Three more land species: Fruit orchards (10, any diet), Hill tortoises (8, any diet; they graze slowly on land, habitat
+`sp-land`) and Coast lighthouses (8, any diet; on the shore, 1 to 12 units over
+the water, `zone: 'shore'`).
+
+**Land scenery.** `land.ts` places pine forests (70 clusters and lone pines),
+16 villages of 4 to 9 cottages (half of them near the coast) and boulders on the
+dry continent. It is decoration only, sized for the size-3 giants, which walk
+through it; it is low-poly, vertex-coloured geometry in chunks of 900 units
+(about 40 000 triangles in all; a phone draws .66M triangles a frame at size 3).
+It stays out of the size-2 square (±860), where it would tower over the Strider
+and hide it; there it is a forest in the distance. It shows from the Big size.
 
 **Sea life and the coast.** A sea spawn that the coast does not fit
 (`coastFits`) is placed again with its own random stream: water life needs water
@@ -486,7 +499,10 @@ lands in the water by its end height (`breachEndY`) with no recovery.
 point just above the ground at the origin (in space, `(0, 3 × size, 0)`). A
 body that walks on land and fits nowhere near the origin (a shore or land plan)
 starts on the coast instead: on the island's beach at size 1, and on the
-continent 2.5 body lengths inland from the waterline from size 2. A
+continent 2.5 body lengths inland from the waterline from size 2. An evolution that finds no place
+near the creature uses the anchor, turned to the anchor's own heading when the
+creature's heading does not fit there (owner bug 2026-10-08: a Shore-walker
+evolving at sea was refused with "This body can't fit anywhere here"). A
 design is valid for a plan only if an anchor exists at growth 1 and at growth
 1.38. Respawn uses the anchor, with 3 s of grace.
 

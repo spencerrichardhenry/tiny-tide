@@ -93,7 +93,8 @@ export function spawnHeight(spec: Species, x: number, z: number, rand: () => num
     case 'boat': return WATER_LEVEL + 4;
     // On its own little island (world.ts draws one), or on the coast's dry land.
     case 'tree': case 'lighthouse': return ground < WATER_LEVEL - 1 ? WATER_LEVEL + 8 : ground + .5;
-    case 'grove': return ground + .5;
+    case 'grove': case 'beacon': return ground + .5;
+    case 'orchard': return ground + .1 * size;
     case 'plane': return WATER_LEVEL + 170 + rand() * 76;
     case 'balloon': return WATER_LEVEL + 220 + rand() * 80;
     case 'planet': return 650 + rand() * 690;
@@ -106,6 +107,7 @@ export function spawnHeight(spec: Species, x: number, z: number, rand: () => num
  *  for it; flyers clear of the land; boats afloat. The open sea (no coast lift) always fits. */
 export function coastFits(spec: Species, x: number, y: number, z: number): boolean {
   const size = SIZES[spec.tier]!, ground = seabedHeight(x, z);
+  if (spec.zone === 'shore') return landmassAt(x, z) === 'continent' && ground > WATER_LEVEL + 1 && ground < WATER_LEVEL + 12;
   if (spec.zone) return landmassAt(x, z) === spec.zone && ground > WATER_LEVEL + .2 * size;
   if (spec.tier >= 4 || coastLift(x, z) === 0) return true;
   switch (spec.habitatProfileId) {
@@ -123,11 +125,17 @@ function landPoint(spec: Species, rand: () => number, avoid?: { x: number; z: nu
   for (let attempt = 0; attempt < 200; attempt++) {
     const x = spec.zone === 'island' ? ISLAND.x + (rand() * 2 - 1) * ISLAND_RADIUS : CONTINENT_FOOT_MIN + rand() * (half - CONTINENT_FOOT_MIN);
     const z = spec.zone === 'island' ? ISLAND.z + (rand() * 2 - 1) * ISLAND_RADIUS : (rand() * 2 - 1) * half;
+    if (spec.zone === 'shore') { const zs = (rand() * 2 - 1) * half; let xs = CONTINENT_FOOT_MIN; while (xs < half && seabedHeight(xs, zs) < WATER_LEVEL + 1) xs += 4; const p = shoreAt(spec, xs + rand() * 16, zs, rand, half, avoid); if (p) return p; continue; }
     if (Math.max(Math.abs(x), Math.abs(z)) > half || (avoid && Math.hypot(x - avoid.x, z - avoid.z) < avoid.radius)) continue;
     const y = spawnHeight(spec, x, z, rand);
     if (coastFits(spec, x, y, z)) return { x, y, z };
   }
   return null;
+}
+/** A coastal point (the waterline walk of landPoint), or null when it is outside the square, too near `avoid` or not on the shore. */
+function shoreAt(spec: Species, x: number, z: number, rand: () => number, half: number, avoid?: { x: number; z: number; radius: number }) {
+  if (x > half || (avoid && Math.hypot(x - avoid.x, z - avoid.z) < avoid.radius)) return null;
+  const y = spawnHeight(spec, x, z, rand); return coastFits(spec, x, y, z) ? { x, y, z } : null;
 }
 export function spawnPoint(spec: Species, biomes: readonly Biome[], rand: () => number, avoid?: { x: number; z: number; radius: number }, blocked?: (x: number, y: number, z: number) => boolean) {
   if (spec.zone) { const p = landPoint(spec, rand, avoid); if (p) return p; }

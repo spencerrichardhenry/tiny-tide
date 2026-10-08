@@ -79,3 +79,18 @@ describe('a flyer over the coast', () => {
     }
   });
 });
+
+describe('the evolution destination (owner bug 2026-10-08: "This body can\'t fit anywhere here" for a Shore-walker)', () => {
+  it('finds a place for every base body from the world centre at any heading', async () => {
+    const { evolutionDestination } = await import('../../src/tiny-tide/lifecycle');
+    for (const p of PLANS.filter(q => q.size > 0 && q.size < 4)) {
+      const r = baseBody(starterGenome(), p, { unlocked: [] }, 50); if (!r.ok) throw new Error(p.id);
+      const legal = { queries: stageWorldQueries(p.size, 1), bounds: stageBounds(p.size) }, a = playerActor(p, r.genome, p.size, 1), anchor = startAnchor(a, p.size, legal);
+      if (!anchor.ok) throw new Error(`${p.id}: no anchor`);
+      for (const yaw of [0, 1, 2, 3, -1.5]) {
+        const here = { x: 5 * (p.size + 1), y: 3, z: -4 * (p.size + 1) };
+        expect(evolutionDestination(a, here, { ...legal, orientation: { yaw, pitch: 0 }, time: 0 }, anchor.position).ok, `${p.id} yaw ${yaw}`).toBe(true);
+      }
+    }
+  });
+});

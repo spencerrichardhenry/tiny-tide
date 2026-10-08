@@ -4,7 +4,7 @@ export type FoodKind = 'plant' | 'kelp_snack' | 'seagrape' | 'lettuce' | 'copepo
   /** Combat species of sizes 0, 1 and 2 (spec §11.3); each draws an existing GLB through `model`. */
   | 'drifter' | 'spiny_snail' | 'clawmother' | 'sardine' | 'puffer' | 'eel' | 'reef_tyrant'
   /** Land food of the coast (coast.ts): the island at size 1, the continent at sizes 2 and 3. */
-  | 'beach_berry' | 'beach_clam' | 'dune_melon' | 'land_crab' | 'grove';
+  | 'beach_berry' | 'beach_clam' | 'dune_melon' | 'land_crab' | 'grove' | 'orchard' | 'tortoise' | 'beacon';
 export type FoodTag = 'plant' | 'meat' | 'any';
 export type Behavior = 'still' | 'drift' | 'graze' | 'school' | 'skittish' | 'flyer';
 export interface Species extends SpeciesCombatFields {
@@ -28,7 +28,7 @@ export interface Species extends SpeciesCombatFields {
   /** An alpha: present only while the player's size equals `size`; defeating it unlocks `rewardPartId` and pays `rewardDna`. */
   alpha?: { size: number; rewardPartId: string; rewardDna: number };
   /** Land food: it spawns only on the dry land of this landmass (coast.ts). */
-  zone?: 'island' | 'continent';
+  zone?: 'island' | 'continent' | 'shore';
 }
 const habitatOf = (behavior: Behavior) => behavior === 'flyer' ? 'sp-air' : behavior === 'still' || behavior === 'graze' ? 'sp-seabed' : 'sp-water';
 const movementOf = (behavior: Behavior) => behavior === 'flyer' ? 'sp-fly' : behavior === 'still' ? 'sp-still' : behavior === 'graze' ? 'sp-ground' : 'sp-swim';
@@ -80,6 +80,11 @@ export const SPECIES: readonly Species[] = [
   s(2, 'dune_melon', 'plant', 'Dune melon', 'still', 18, 18, { model: 'seagrape', tint: '#9ccf5a', bodyScale: 1.3, zone: 'continent', habitatProfileId: 'sp-prop' }),
   s(2, 'land_crab', 'meat', 'Coconut crab', 'still', 12, 22, { model: 'crab', tint: '#8a5634', zone: 'continent', habitatProfileId: 'sp-prop' }),
   s(3, 'grove', 'any', 'Pine grove', 'still', 12, 24, { model: 'tree', tint: '#6f9f5b', zone: 'continent', habitatProfileId: 'sp-prop' }),
+  // More land food at size 3 (owner, 2026-10-08: "the continental landmass looks quite empty"): orchards, grazing hill tortoises and
+  // coastal lighthouses (`zone: 'shore'`: dry land near the waterline).
+  s(3, 'orchard', 'any', 'Fruit orchard', 'still', 10, 22, { model: 'seagrape', tint: '#f08a3c', bodyScale: 1.6, zone: 'continent', habitatProfileId: 'sp-prop' }),
+  s(3, 'tortoise', 'any', 'Hill tortoise', 'graze', 8, 28, { model: 'snail', tint: '#7c8a4a', bodyScale: 1.5, speed: .5, zone: 'continent', habitatProfileId: 'sp-land' }),
+  s(3, 'beacon', 'any', 'Coast lighthouse', 'still', 8, 26, { model: 'lighthouse', zone: 'shore', habitatProfileId: 'sp-prop' }),
 ];
 /** The index of the first row appended by combat sub-project 3a: earlier rows keep the reef-fallback RNG of their spawns (populate). */
 export const APPENDED_FROM = SPECIES.findIndex(spec => spec.key === '0:drifter');
