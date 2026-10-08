@@ -1,4 +1,4 @@
-import { baseSeabedHeight, coastLift, CONTINENT_FOOT_MIN, ISLAND, ISLAND_RADIUS, landmassAt } from './coast';
+import { coastLift, CONTINENT_FOOT_MIN, ISLAND, ISLAND_RADIUS, landmassAt } from './coast';
 import { EDGE_REACH, EDGE_SOFT_START } from './edge';
 import { APPENDED_FROM, SPECIES, tierSpecies, type FoodKind, type Species } from './species';
 
@@ -20,11 +20,13 @@ export const PLAYER_HALF = 50;
 export const WORLD_HALF = EDGE_REACH * PLAYER_HALF;
 /** New food and creatures are placed inside this square (tier-local), outside the edge's push zone. */
 export const SPAWN_HALF = EDGE_SOFT_START * PLAYER_HALF;
-/** The collision ground (physical units): the open-sea seabed plus the coast's island and continent (coast.ts). */
+/** The collision ground (physical units): the open-sea seabed plus the coast's island and continent (coast.ts). A hot path (every ground
+ *  sample of every admission): the open-sea formula is written out here, as baseSeabedHeight, and the coast code runs only near land. */
+const ISLAND_X = ISLAND.x, ISLAND_Z = ISLAND.z, ISLAND_R = ISLAND_RADIUS, FOOT = CONTINENT_FOOT_MIN;
 export function seabedHeight(x: number, z: number) {
-  // The open sea skips the coast code (a hot path: every ground sample of every admission).
-  const b = baseSeabedHeight(x, z);
-  return x > CONTINENT_FOOT_MIN || (Math.abs(x - ISLAND.x) < ISLAND_RADIUS && Math.abs(z - ISLAND.z) < ISLAND_RADIUS) ? b + coastLift(x, z) : b;
+  const b = Math.sin(x * .075) * Math.cos(z * .055) * 2.4 + Math.sin((x + z) * .018) * 4.5 + Math.sin(x * .006) * Math.sin(z * .009) * 13;
+  if (x <= FOOT && (x - ISLAND_X >= ISLAND_R || ISLAND_X - x >= ISLAND_R || z - ISLAND_Z >= ISLAND_R || ISLAND_Z - z >= ISLAND_R)) return b;
+  return b + coastLift(x, z);
 }
 export function random(seed: number): () => number {
   return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };

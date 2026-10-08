@@ -602,7 +602,7 @@ describe('spawning and the ecosystem never use a solid (R5)', () => {
     }
     expect(checked).toBeGreaterThan(100);
     expect({ foods, homes, anchors }).toEqual({ foods: 0, homes: 0, anchors: 0 });
-  });
+  }, 30_000);   // the CI runner is several times slower than a laptop; the coast plans add start anchors (2026-10-08: timed out at the 5 s default)
   it('respawned food and creatures are never inside a solid', () => {
     for (const seed of REEF_SEEDS.slice(0, 3)) {
       const eco = new Ecosystem(seed), far = { x: 1e5, y: 0, z: 1e5 };
@@ -632,7 +632,7 @@ describe('spawning and the ecosystem never use a solid (R5)', () => {
       expect(steps).toBeGreaterThan(1000);
       expect({ inside, hullInside }, `seed ${seed} stage ${stage}`).toEqual({ inside: 0, hullInside: 0 });
     }
-  });
+  }, 30_000);   // the CI runner is several times slower than a laptop; the coast plans add start anchors (2026-10-08: timed out at the 5 s default)
   it('a reef plant base is never inside a solid, at every stage that collides with it', () => {
     for (const seed of REEF_SEEDS) for (let layer = 0; layer < REEF_LAYERS.length; layer++) {
       const reef = placeReef(layer, seed);

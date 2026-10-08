@@ -116,7 +116,7 @@ describe('regeneration', () => {
     const samples: number[] = [];
     for (let f = 1; f <= 12 * 60; f++) { simFrame(s, w, { dt: DT, intent: RELEASED, wish: { x: 0, y: 0, z: 0 }, held: false }); if (f % 60 === 0) samples.push(s.run.health); }
     expect(samples).toEqual([4, 4, 4, 4, 4, 4, 4, 4, 4.5, 4.5, 5, 5]);   // 7 s quiet, then +.5 at 9 s and 11 s
-  });
+  }, 30_000);   // the CI runner is several times slower than a laptop (2026-10-08: timed out at the 5 s default)
 });
 describe('QA parameters (spec §14.2)', () => {
   it('qaEncounter installs the nearest live instance 3 player L in front, in calm', () => {
