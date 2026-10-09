@@ -502,7 +502,9 @@ starts on the coast instead: on the island's beach at size 1, and on the
 continent 2.5 body lengths inland from the waterline from size 2. An evolution that finds no place
 near the creature uses the anchor, turned to the anchor's own heading when the
 creature's heading does not fit there (owner bug 2026-10-08: a Shore-walker
-evolving at sea was refused with "This body can't fit anywhere here"). A
+evolving at sea was refused with "This body can't fit anywhere here"). A land-only body (Strider, Dune giant) that evolves away from the
+continent goes to the continent's anchor: near the island it would fit on the
+island and be stranded there (owner bug 2026-10-08). A
 design is valid for a plan only if an anchor exists at growth 1 and at growth
 1.38. Respawn uses the anchor, with 3 s of grace.
 

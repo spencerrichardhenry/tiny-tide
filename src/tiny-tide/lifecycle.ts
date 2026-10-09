@@ -1,4 +1,5 @@
 // Pure lifecycle transitions: reset, one guarded respawn, recovery, commit reconciliation, damage resolution, evolution.
+import { landmassAt } from './coast';
 import type { Actor, Admission, CombatRuntime, LegalityContext, Orientation, RecoveryResult, Vec3 } from './combat-types';
 import { findRecoveryPose } from './motion';
 import { STEP_LIFT_MAX, STEP_TRIES, stepKind, supportHeight } from './world-queries';
@@ -310,6 +311,11 @@ export function resolveHazards(events: readonly EcoEvent[], ctx: { mode: string;
 }
 
 export function evolutionDestination(actor: Actor, here: Vec3, ctx: LegalityContext & { orientation: Orientation; time: number }, anchor: Vec3): RecoveryResult {
+  // A land-only body (it cannot swim) goes to the continent: near the island it would fit on the island and be stranded there (owner
+  // bug 2026-10-08). It starts from the anchor, which startAnchor puts on the continent from size 2.
+  const h = actor.habitat;
+  if (!h.media.includes('water') && h.media.includes('land') && landmassAt(here.x, here.z) !== 'continent' && landmassAt(anchor.x, anchor.z) === 'continent')
+    return findRecoveryPose(actor, anchor, ctx, { maxDistance: 30 * actor.bodyLength, anchor });
   return findRecoveryPose(actor, here, ctx, { maxDistance: 30 * actor.bodyLength, anchor });
 }
 

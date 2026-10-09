@@ -94,3 +94,19 @@ describe('the evolution destination (owner bug 2026-10-08: "This body can\'t fit
     }
   });
 });
+
+describe('land-only evolutions go to the continent (owner bug 2026-10-08: "stranded on a tiny island")', () => {
+  it('a Shore-walker on the island that becomes a Strider lands on the continent, and a Mudskipper may stay', async () => {
+    const { evolutionDestination } = await import('../../src/tiny-tide/lifecycle');
+    const { landmassAt, landStart } = await import('../../src/tiny-tide/coast');
+    const beach = landStart('island'), here = { x: beach.x, y: 92, z: beach.z };
+    for (const [id, where] of [['strider', 'continent'], ['mudskipper', null]] as const) {
+      const p = plan(id)!, r = baseBody(starterGenome(), p, { unlocked: [] }, 50); if (!r.ok) throw new Error(id);
+      const legal = { queries: stageWorldQueries(2, 1), bounds: stageBounds(2) }, a = playerActor(p, r.genome, 2, 1), anchor = startAnchor(a, 2, legal);
+      if (!anchor.ok) throw new Error(`${id}: no anchor`);
+      const d = evolutionDestination(a, here, { ...legal, orientation: { yaw: 1, pitch: 0 }, time: 0 }, anchor.position);
+      expect(d.ok, id).toBe(true); if (!d.ok) continue;
+      if (where) expect(landmassAt(d.position.x, d.position.z), id).toBe(where);
+    }
+  });
+});
